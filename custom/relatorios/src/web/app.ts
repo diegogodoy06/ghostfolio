@@ -4,7 +4,7 @@ import {
 } from "chart.js";
 import type { CategoryGroup, Position, Report } from "../shared";
 import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, real, rebased, ret, stats } from "./calc";
-import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, dateBR, esc, money, openModal, pct, qty, skeleton, spct, tone } from "./ui";
+import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, countUp, dateBR, drawLine, esc, fadeFill, growBars, money, openModal, pct, qty, skeleton, spinDonut, spct, tone } from "./ui";
 import { mountSimSummary, renderCarteiraSim } from "./simulacao";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
@@ -128,6 +128,7 @@ function render() {
   ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade })[state.tab](r);
   void main.offsetWidth; // reinicia a animação de entrada
   main.classList.add("enter");
+  countUp(main);
 }
 
 // ---------- componentes ----------
@@ -161,6 +162,7 @@ function donut(canvas: HTMLCanvasElement, labels: string[], values: number[], co
       options: {
         cutout: "68%",
         maintainAspectRatio: false,
+        animation: spinDonut(),
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.label}: ${money(c.parsed)} (${pct(c.parsed / values.reduce((s, v) => s + v, 0), 1)})` } } },
       },
     }),
@@ -205,7 +207,7 @@ function renderResumo(r: Report) {
       <div class="split-1-2">
         <div>
           <div class="bars">${items
-            .map((i) => `<div class="item"><span>${i.label}</span><div class="track"><div class="fill" style="background:${i.color};left:${i.value != null && i.value < 0 ? 50 - (Math.abs(i.value) / maxAbs) * 50 : 50}%;width:${i.value == null ? 0 : (Math.abs(i.value) / maxAbs) * 50}%"></div></div><span class="v ${tone(i.value)}">${pct(i.value)}</span></div>`)
+            .map((i) => `<div class="item"><span>${i.label}</span><div class="track"><div class="fill ${i.value != null && i.value < 0 ? "neg" : ""}" style="background:${i.color};left:${i.value != null && i.value < 0 ? 50 - (Math.abs(i.value) / maxAbs) * 50 : 50}%;width:${i.value == null ? 0 : (Math.abs(i.value) / maxAbs) * 50}%"></div></div><span class="v ${tone(i.value)}">${pct(i.value)}</span></div>`)
             .join("")}</div>
           <p class="note">${nominal != null && cdi ? `Sua carteira rendeu <b>${pct(nominal)}</b> contra <b>${pct(cdi)}</b> do CDI: <b>${pct(nominal / cdi, 1)} do CDI</b>.` : ""} Rentabilidade por cota (ponderada no tempo), com proventos — mesmo método de Rico e TradeMap.${state.realMode ? " Valores reais: descontada a inflação (IPCA) do período." : ""}${ghostNote(r, gain)}</p>
         </div>
@@ -243,14 +245,17 @@ function renderResumo(r: Report) {
           label: b.label,
           data: rebased(b.key === "carteira" ? idx : r.benchmarks[b.key]!.points, days, from, defl),
           borderColor: b.color,
-          backgroundColor: b.color,
+          backgroundColor: b.key === "carteira" ? fadeFill("54, 207, 204", 0.22) : b.color,
+          fill: b.key === "carteira" ? "origin" : false,
           borderWidth: b.key === "carteira" ? 2.5 : 1.75,
           pointRadius: 0,
-          tension: 0.15,
+          pointHoverRadius: 4,
+          tension: 0.25,
         })),
       },
       options: {
         maintainAspectRatio: false,
+        animation: drawLine(days.length),
         interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${(c.parsed.y ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` } } },
         scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false } }, y: { ticks: { callback: (v) => `${v}%` } } },
@@ -266,12 +271,13 @@ function renderResumo(r: Report) {
       data: {
         labels: eq.map((p) => dateBR(p.date)),
         datasets: [
-          { label: "Patrimônio", data: eq.map((p) => p.value), borderColor: "#36cfcc", backgroundColor: "rgba(54,207,204,0.12)", fill: true, borderWidth: 2, pointRadius: 0 },
+          { label: "Patrimônio", data: eq.map((p) => p.value), borderColor: "#36cfcc", backgroundColor: fadeFill("54, 207, 204", 0.25), fill: true, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 },
           { label: "Investido", data: eq.map((p) => p.invested), borderColor: "#858a96", borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0 },
         ],
       },
       options: {
         maintainAspectRatio: false,
+        animation: drawLine(eq.length),
         interaction: { mode: "index", intersect: false },
         plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}` } } },
         scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false } }, y: { ticks: { callback: (v) => `R$ ${(Number(v) / 1000).toLocaleString("pt-BR")} mil` } } },
@@ -396,6 +402,7 @@ function assetModal(r: Report, ticker: string) {
     },
     options: {
       maintainAspectRatio: false,
+      animation: growBars(),
       plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}` } } },
       scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: (v) => `R$ ${v}` } } },
     },
@@ -492,6 +499,7 @@ function renderProventos(r: Report) {
       },
       options: {
         maintainAspectRatio: false,
+        animation: growBars(),
         plugins: {
           legend: { position: "bottom", labels: { boxWidth: 10 } },
           tooltip: { mode: "index", filter: (i) => (i.parsed.y ?? 0) > 0, callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}`, footer: (items) => `Total: ${money(items.reduce((s, i) => s + (i.parsed.y ?? 0), 0))}` } },

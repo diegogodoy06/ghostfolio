@@ -10,7 +10,7 @@ import {
   type AssetPlan, type BuyParam, type CategoryAction, type Quote, type SaleParam, type SimPosition, type SimResult,
   type SimulationParams, defaultParams, simulate,
 } from "../sim-engine";
-import { colorOf, esc, money, openModal, parseNum, pct, qty, toast } from "./ui";
+import { colorOf, countUp, esc, money, openModal, parseNum, pct, qty, spinDonut, toast } from "./ui";
 
 const ALL_CATEGORIES = ["Ações", "FIIs", "ETFs", "BDRs", "Exterior", "Tesouro Direto", "Renda Fixa", "Cripto"];
 
@@ -84,6 +84,7 @@ const STATUS: Record<CategoryAction["status"], { label: (c: CategoryAction) => s
 // =====================================================================================
 
 let simChart: Chart | null = null;
+let firstDonut = true;
 
 export function renderCarteiraSim(r: Report, main: HTMLElement, header: string, onReady: () => void) {
   if (!params) {
@@ -93,6 +94,7 @@ export function renderCarteiraSim(r: Report, main: HTMLElement, header: string, 
     return;
   }
   const p = params;
+  firstDonut = true; // abrir a aba anima de novo; editar não
   main.innerHTML = `${header}
     <section class="card sim-toolbar">
       <div class="sim-controls">
@@ -246,10 +248,18 @@ function renderSimBody(r: Report) {
     options: {
       cutout: "68%",
       maintainAspectRatio: false,
-      animation: { duration: 300 },
+      // Na primeira abertura gira até o lugar; nas edições só transiciona.
+      animation: firstDonut ? spinDonut() : { duration: 350, easing: "easeOutQuart" },
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (x) => ` ${x.label}: ${money(x.parsed)} (${pct(x.parsed / (res.totalAfter || 1), 1)} · meta ${pct(cats[x.dataIndex]!.target, 1)})` } } },
     },
   });
+
+  if (firstDonut) {
+    firstDonut = false;
+    countUp(body);
+    // Depois da entrada, as edições atualizam sem replay das animações.
+    setTimeout(() => body.classList.add("settled"), 1200);
+  }
 
   // Metas (confirma ao sair do campo / Enter para não perder o foco a cada tecla).
   body.querySelectorAll<HTMLInputElement>("[data-target]").forEach((inp) =>

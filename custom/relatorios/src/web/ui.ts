@@ -112,3 +112,76 @@ export function toast(msg: string) {
     setTimeout(() => t.remove(), 300);
   }, 1800);
 }
+
+// ---------- Animações dos gráficos (Chart.js) ----------
+// Tipadas como `any` para servir a qualquer tipo de gráfico sem brigar com os genéricos.
+
+/** Linha que se desenha da esquerda para a direita (total ~1,1 s, independente do nº de pontos). */
+export function drawLine(points: number, total = 1100): any {
+  if (reducedMotion()) return false;
+  const step = total / Math.max(points, 1);
+  const startY = (ctx: any) => {
+    const y = ctx.chart.scales.y;
+    if (ctx.index === 0) return y.getPixelForValue(Math.max(y.min, Math.min(0, y.max)));
+    return ctx.chart.getDatasetMeta(ctx.datasetIndex).data[ctx.index - 1]?.getProps(["y"], true).y;
+  };
+  const delay = (key: "xStarted" | "yStarted") => (ctx: any) => {
+    if (ctx.type !== "data" || ctx[key]) return 0;
+    ctx[key] = true;
+    return ctx.index * step;
+  };
+  return {
+    x: { type: "number", easing: "linear", duration: step, from: NaN, delay: delay("xStarted") },
+    y: { type: "number", easing: "linear", duration: step, from: startY, delay: delay("yStarted") },
+  };
+}
+
+/** Barras que sobem da base em cascata. */
+export function growBars(): any {
+  if (reducedMotion()) return false;
+  return {
+    duration: 650,
+    easing: "easeOutCubic",
+    delay: (ctx: any) => (ctx.type === "data" && ctx.mode === "default" ? ctx.dataIndex * 28 + ctx.datasetIndex * 60 : 0),
+  };
+}
+
+/** Rosca que gira e cresce até o lugar. */
+export function spinDonut(): any {
+  if (reducedMotion()) return false;
+  return { animateRotate: true, animateScale: true, duration: 950, easing: "easeOutQuart" };
+}
+
+/** Degradê vertical sob uma linha (cor no topo, transparente na base). */
+export function fadeFill(rgb: string, alpha = 0.28) {
+  return (ctx: any) => {
+    const { chart } = ctx;
+    const area = chart.chartArea;
+    if (!area) return "transparent";
+    const g = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+    g.addColorStop(0, `rgba(${rgb}, ${alpha})`);
+    g.addColorStop(1, `rgba(${rgb}, 0)`);
+    return g;
+  };
+}
+
+/** Faz os valores em R$ dos cartões de destaque contarem até o número final. */
+export function countUp(root: ParentNode, selector = ".kpi .value") {
+  if (reducedMotion()) return;
+  root.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+    const text = el.textContent?.trim() ?? "";
+    const m = /^(-?)\s?R\$\s?([\d.]+,\d{2})$/.exec(text);
+    if (!m) return;
+    const target = Number(m[2]!.replace(/\./g, "").replace(",", ".")) * (m[1] ? -1 : 1);
+    const start = performance.now();
+    const duration = 750;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - (1 - t) ** 3;
+      el.textContent = money(target * eased);
+      if (t < 1 && el.isConnected) requestAnimationFrame(tick);
+      else el.textContent = text;
+    };
+    requestAnimationFrame(tick);
+  });
+}
