@@ -1,0 +1,17 @@
+{
+  "name": "ghostfolio-relatorios",
+  "private": true,
+  "description": "Relatórios da carteira no estilo brasileiro (rentabilidade com proventos, categorias, proventos) sobre a API do Ghostfolio",
+  "scripts": {
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "esbuild src/server/main.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/server.js",
+    "build:web": "esbuild src/web/app.ts --bundle --minify --target=es2022 --outfile=dist/public/app.js && cp src/web/index.html src/web/styles.css dist/public/",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "chart.js": "^4.5.0",
+    "esbuild": "^0.27.0",
+    "typescript": "^5.9.0"
+  }
+}

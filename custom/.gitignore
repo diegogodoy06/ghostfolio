@@ -1,3 +1,5 @@
 sync/sync.env
 sync/node_modules/
 sync/dist/
+relatorios/node_modules/
+relatorios/dist/

@@ -6,7 +6,18 @@ Tudo sobe com um comando, nesta pasta:
 docker compose up -d --build
 ```
 
-Isso inicia o Ghostfolio oficial (app, Postgres e Redis) e o serviço `ghostfolio-sync`, que roda ao iniciar, todo dia às 9h (Brasília) e sempre que a pasta `extratos/` muda.
+Isso inicia o Ghostfolio oficial (app, Postgres e Redis), o serviço `ghostfolio-sync`, que roda ao iniciar, todo dia às 9h (Brasília) e sempre que a pasta `extratos/` muda, e os **relatórios** em http://localhost:3334.
+
+## Relatórios (localhost:3334)
+
+Relatórios no estilo das corretoras brasileiras, sobre os dados do Ghostfolio. Entre com o mesmo token de segurança do Ghostfolio (fica salvo no aparelho; no celular, use o IP do computador e "Adicionar à tela inicial").
+
+- **Resumo**: patrimônio, valorização, proventos, desempenho contra CDI, Ibovespa, IPCA, IPCA + 6%, IFIX e dólar (nominal ou real), alocação e evolução do patrimônio.
+- **Carteira**: categorias (Ações por setor, FIIs por tipo, ETFs, Exterior, Tesouro, Renda Fixa) com cada ativo: quantidade, preço médio, preço, retorno, proventos, % da classe e % da carteira.
+- **Proventos**: evolução mensal por categoria, recebidos × estimados, quem mais pagou, por tipo e por ano.
+- **Rentabilidade**: tabela mês a mês com % do CDI e estatísticas (volatilidade, maior queda, melhor/pior mês, Sharpe).
+
+A rentabilidade é por cota (ponderada no tempo) e **inclui proventos**, como Rico e TradeMap; por isso difere do gráfico de Análise do Ghostfolio, que exclui proventos. Categorias podem ser ajustadas em `extratos/categorias.json`, por exemplo `{ "ITSA4": { "subcategoria": "Financeiro" } }`.
 
 ## Primeira vez
 

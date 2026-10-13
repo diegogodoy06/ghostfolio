@@ -27,5 +27,27 @@ services:
       ghostfolio:
         condition: service_healthy
 
+  ghostfolio-relatorios:
+    build: custom/relatorios
+    container_name: ghostfolio-relatorios
+    restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - custom/sync/sync.env
+    environment:
+      GHOSTFOLIO_URL: http://ghostfolio:3333
+      EXTRATOS_DIR: /extratos
+    volumes:
+      - ./extratos:/extratos:ro
+    ports:
+      - 3334:3334
+    depends_on:
+      ghostfolio:
+        condition: service_healthy
+
 volumes:
   sync-data:

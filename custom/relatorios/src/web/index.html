@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#111317" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Relatórios</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">Relatórios <span>da carteira</span></div>
+      <div class="top-actions">
+        <select id="account" aria-label="Conta"></select>
+        <button id="refresh" class="icon" title="Atualizar" aria-label="Atualizar">↻</button>
+      </div>
+    </header>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="resumo">Resumo</button>
+      <button role="tab" data-tab="carteira">Carteira</button>
+      <button role="tab" data-tab="proventos">Proventos</button>
+      <button role="tab" data-tab="rentabilidade">Rentabilidade</button>
+    </nav>
+    <main id="main"><p class="muted center">Carregando…</p></main>
+    <template id="login-tpl">
+      <form class="card login">
+        <h2>Entrar</h2>
+        <p class="muted">Use o mesmo token de segurança do Ghostfolio. Ele fica salvo neste aparelho.</p>
+        <input name="token" type="password" autocomplete="current-password" placeholder="Token de segurança" required />
+        <button type="submit" class="primary">Entrar</button>
+        <p class="error" hidden></p>
+      </form>
+    </template>
+    <script src="app.js"></script>
+  </body>
+</html>
