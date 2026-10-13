@@ -1,0 +1,17 @@
+{
+  "name": "ghostfolio-sync",
+  "private": true,
+  "description": "Automação local do Ghostfolio para o Brasil: extratos da B3, proventos, Tesouro e benchmarks",
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.27.0",
+    "typescript": "^5.9.0"
+  }
+}
