@@ -8,12 +8,18 @@ export const CATEGORY_COLOR: Record<string, string> = {
 export const ACCENT = "#36cfcc";
 export const colorOf = (category: string) => CATEGORY_COLOR[category] ?? PALETTE[8]!;
 
+/** "Vista do Apresentador": esconde valores absolutos e quantidades (percentuais continuam). */
+export const privacy = { on: false };
+export const MASK = "R$ •••••";
+
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-export const money = (n: number) => brl.format(n);
+export const money = (n: number) => (privacy.on ? MASK : brl.format(n));
 export const pct = (n: number | null | undefined, d = 2) =>
   n == null || !Number.isFinite(n) ? "—" : `${(n * 100).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d })}%`;
 export const spct = (n: number | null | undefined, d = 2) => (n == null ? "—" : `${n > 0 ? "+" : ""}${pct(n, d)}`);
-export const qty = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
+export const qty = (n: number) => (privacy.on ? "•••" : n.toLocaleString("pt-BR", { maximumFractionDigits: 4 }));
+/** Rótulo de eixo em R$ (oculto na Vista do Apresentador). */
+export const axisMoney = (v: number | string, suffix = "") => (privacy.on ? "•••" : `R$ ${Number(v).toLocaleString("pt-BR")}${suffix}`);
 export const tone = (n: number | null | undefined) => (n == null ? "" : n > 0.00005 ? "up" : n < -0.00005 ? "down" : "");
 export const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 export const dateBR = (d: string) => d.split("-").reverse().join("/");
@@ -115,26 +121,6 @@ export function toast(msg: string) {
 
 // ---------- Animações dos gráficos (Chart.js) ----------
 // Tipadas como `any` para servir a qualquer tipo de gráfico sem brigar com os genéricos.
-
-/** Linha que se desenha da esquerda para a direita (total ~1,1 s, independente do nº de pontos). */
-export function drawLine(points: number, total = 1100): any {
-  if (reducedMotion()) return false;
-  const step = total / Math.max(points, 1);
-  const startY = (ctx: any) => {
-    const y = ctx.chart.scales.y;
-    if (ctx.index === 0) return y.getPixelForValue(Math.max(y.min, Math.min(0, y.max)));
-    return ctx.chart.getDatasetMeta(ctx.datasetIndex).data[ctx.index - 1]?.getProps(["y"], true).y;
-  };
-  const delay = (key: "xStarted" | "yStarted") => (ctx: any) => {
-    if (ctx.type !== "data" || ctx[key]) return 0;
-    ctx[key] = true;
-    return ctx.index * step;
-  };
-  return {
-    x: { type: "number", easing: "linear", duration: step, from: NaN, delay: delay("xStarted") },
-    y: { type: "number", easing: "linear", duration: step, from: startY, delay: delay("yStarted") },
-  };
-}
 
 /** Barras que sobem da base em cascata. */
 export function growBars(): any {

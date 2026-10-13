@@ -70,6 +70,13 @@ async function runOnce(reason: string) {
   try {
     log(`— sincronizando (${reason})${DRY_RUN ? " [dry-run]" : ""}`);
     const api = await connect(URL_BASE);
+    // Com a "Vista do Apresentador" ligada, o Ghostfolio apaga quantidades, valores e comentários
+    // das respostas da API; sincronizar assim duplicaria ou apagaria atividades. Pausa tudo.
+    const user = await api<{ settings?: { isRestrictedView?: boolean } }>("GET", "/v1/user");
+    if (user.settings?.isRestrictedView) {
+      log("⚠ Vista do Apresentador ligada no Ghostfolio: a API esconde os valores. Sincronização pausada até ser desligada (Ajustes da conta).");
+      return;
+    }
     await step("configuração inicial", () => ensureCurrencySetup(api, state));
 
     let activities = await getActivities(api);

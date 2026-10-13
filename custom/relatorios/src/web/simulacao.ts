@@ -10,7 +10,7 @@ import {
   type AssetPlan, type BuyParam, type CategoryAction, type Quote, type SaleParam, type SimPosition, type SimResult,
   type SimulationParams, defaultParams, simulate,
 } from "../sim-engine";
-import { colorOf, countUp, esc, money, openModal, parseNum, pct, qty, spinDonut, toast } from "./ui";
+import { colorOf, countUp, esc, money, openModal, parseNum, pct, privacy, qty, spinDonut, toast } from "./ui";
 
 const ALL_CATEGORIES = ["Ações", "FIIs", "ETFs", "BDRs", "Exterior", "Tesouro Direto", "Renda Fixa", "Cripto"];
 
@@ -64,6 +64,7 @@ const savedLabel = () => (savedAt ? `Salvo ${new Date(savedAt).toLocaleString("p
 const isActive = (p: SimulationParams) => p.contribution > 0 || p.sales.length > 0 || (p.buys?.length ?? 0) > 0 || p.allowSells;
 const qtyLabel = (n: number | null, whole: boolean) => {
   if (n == null || Math.abs(n) < 1e-9) return "";
+  if (privacy.on) return "••• cotas";
   const v = Math.abs(n);
   return whole ? `${Math.round(v)} cota${Math.round(v) === 1 ? "" : "s"}` : `${qty(v)} cotas`;
 };

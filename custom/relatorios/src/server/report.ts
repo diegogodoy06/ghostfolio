@@ -94,7 +94,7 @@ async function series(api: Api, dataSource: string, symbol: string, days: number
 export async function buildReport(api: Api, accountIds: string[]): Promise<Report> {
   for (let attempt = 1; ; attempt++) {
     const report = await buildOnce(api, accountIds);
-    if (report.summary.value > 0 || report.incomes.length === 0 || attempt >= 4) return report;
+    if (report.summary.value > 0 || report.incomes.length === 0 || report.ghostfolioRestricted || attempt >= 4) return report;
     await new Promise((r) => setTimeout(r, 4_000));
   }
 }
@@ -105,7 +105,7 @@ async function buildOnce(api: Api, accountIds: string[]): Promise<Report> {
     api<{ accounts: { id: string; name: string }[] }>("/v1/account"),
     api<{ activities: Activity[] }>(`/v1/activities?${filter.slice(1)}`),
     api<{ holdings: Holding[] | Record<string, Holding> }>(`/v1/portfolio/details?range=max${filter}`),
-    api<{ settings: { baseCurrency?: string } }>("/v1/user"),
+    api<{ settings: { baseCurrency?: string; isRestrictedView?: boolean } }>("/v1/user"),
   ]);
 
   // ---- Proventos ----
@@ -259,5 +259,6 @@ async function buildOnce(api: Api, accountIds: string[]): Promise<Report> {
     incomes,
     firstDate,
     ghostfolio,
+    ghostfolioRestricted: !!user.settings.isRestrictedView,
   };
 }

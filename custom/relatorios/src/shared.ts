@@ -61,4 +61,6 @@ export interface Report {
   firstDate: string;
   /** Percentual que o próprio Ghostfolio mostra (retorno sobre o capital médio), por período. */
   ghostfolio: Partial<Record<"MTD" | "YTD" | "12M" | "MAX", { pct: number; gain: number }>>;
+  /** "Vista do Apresentador" ligada no Ghostfolio: a API devolve os valores apagados. */
+  ghostfolioRestricted: boolean;
 }

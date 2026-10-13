@@ -4,15 +4,13 @@ import {
 } from "chart.js";
 import type { CategoryGroup, Position, Report } from "../shared";
 import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, real, rebased, ret, stats } from "./calc";
-import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, countUp, dateBR, drawLine, esc, fadeFill, growBars, money, openModal, pct, qty, skeleton, spinDonut, spct, tone } from "./ui";
+import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, axisMoney, countUp, dateBR, esc, fadeFill, growBars, privacy, toast, money, openModal, pct, qty, skeleton, spinDonut, spct, tone } from "./ui";
 import { mountSimSummary, renderCarteiraSim } from "./simulacao";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
 Chart.defaults.color = "rgba(255,255,255,0.7)";
 // Animação curta só na entrada; dados mudam sem "crescer do zero".
 Chart.defaults.animation = { duration: 450, easing: "easeOutQuart" };
-// Degradês (CanvasGradient) não são interpoláveis: anima forma e posição, não as cores.
-Chart.defaults.animations.colors = false as any;
 Chart.defaults.borderColor = "rgba(255,255,255,0.12)";
 Chart.defaults.font.family = '"Inter", Roboto, "Helvetica Neue", sans-serif';
 
@@ -67,6 +65,7 @@ state.tab = tabFromHash();
 state.carteiraMode = saved("rel.carteiraMode", "atual") === "sim" ? "sim" : "atual";
 let charts: Chart[] = [];
 const main = document.getElementById("main")!;
+const GHOSTFOLIO = `${location.protocol}//${location.hostname}:3333/pt/`;
 
 async function load(refresh = false) {
   const btn = document.getElementById("refresh")!;
@@ -78,6 +77,14 @@ async function load(refresh = false) {
   } finally {
     btn.classList.remove("spin");
   }
+}
+
+function updatePrivacyButton() {
+  const b = document.getElementById("privacy")!;
+  b.setAttribute("aria-pressed", String(privacy.on));
+  b.title = privacy.on ? "Mostrar valores" : "Ocultar valores (modo apresentação)";
+  (b.querySelector(".ico") as HTMLElement).style.setProperty("--icon", `url(icons/${privacy.on ? "eye-off-outline" : "eye-outline"}.svg)`);
+  document.body.classList.toggle("privacy", privacy.on);
 }
 
 async function fetchReport(refresh: boolean) {
@@ -127,6 +134,11 @@ function render() {
   document.getElementById("page-title")!.textContent = TITLES[state.tab] + (state.tab === "carteira" && state.carteiraMode === "sim" ? " · simulação" : "");
   document.title = `${TITLES[state.tab]} · Ghostfolio`;
   main.classList.remove("enter");
+  if (r.ghostfolioRestricted) {
+    main.innerHTML = `<div class="card notice-card"><h2 style="margin:0 0 6px">A “Vista do Apresentador” está ligada no Ghostfolio</h2>
+      <p class="muted" style="margin:0">Com ela ligada, o Ghostfolio esconde quantidades e valores em tudo que entrega pela API, então os relatórios ficam zerados e a sincronização automática fica pausada. Desligue em <a href="${GHOSTFOLIO}account">Ghostfolio → Minha conta</a> e use o botão do olho aqui em cima para ocultar os valores nos relatórios.</p></div>`;
+    return;
+  }
   ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade })[state.tab](r);
   void main.offsetWidth; // reinicia a animação de entrada
   main.classList.add("enter");
@@ -215,13 +227,13 @@ function renderResumo(r: Report) {
         </div>
         <div>
           <div class="chips" data-role="bench">${BENCH.map((b) => `<button class="chip" data-bench="${b.key}" aria-pressed="${state.bench.has(b.key)}"><span class="dot" style="background:${b.color}"></span>${b.label}</button>`).join("")}</div>
-          <div class="chart-box"><canvas id="perf"></canvas></div>
+          <div class="chart-box wipe"><canvas id="perf"></canvas></div>
         </div>
       </div>
     </section>
     <section class="split">
       <div class="card"><h2>Alocação</h2><div class="chart-box donut"><canvas id="alloc"></canvas></div><h3>Por categoria</h3>${legendList(r.categories.map((c) => ({ label: c.name, value: c.value, weight: c.weight, color: CATEGORY_COLOR[c.name] ?? PALETTE[8]! })))}</div>
-      <div class="card"><h2>Evolução do patrimônio</h2><div class="chart-box"><canvas id="equity"></canvas></div><p class="note">Valor de mercado × valor investido.</p></div>
+      <div class="card"><h2>Evolução do patrimônio</h2><div class="chart-box wipe"><canvas id="equity"></canvas></div><p class="note">Valor de mercado × valor investido.</p></div>
     </section>`;
   wireCommon();
   main.querySelectorAll<HTMLButtonElement>("[data-bench]").forEach((b) =>
@@ -257,7 +269,7 @@ function renderResumo(r: Report) {
       },
       options: {
         maintainAspectRatio: false,
-        animation: drawLine(days.length),
+        animation: false, // revelação feita por CSS (.chart-box.wipe)
         interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${(c.parsed.y ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` } } },
         scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false } }, y: { ticks: { callback: (v) => `${v}%` } } },
@@ -279,10 +291,10 @@ function renderResumo(r: Report) {
       },
       options: {
         maintainAspectRatio: false,
-        animation: drawLine(eq.length),
+        animation: false,
         interaction: { mode: "index", intersect: false },
         plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}` } } },
-        scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false } }, y: { ticks: { callback: (v) => `R$ ${(Number(v) / 1000).toLocaleString("pt-BR")} mil` } } },
+        scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false } }, y: { ticks: { callback: (v) => axisMoney(Number(v) / 1000, " mil") } } },
       },
     }),
   );
@@ -406,7 +418,7 @@ function assetModal(r: Report, ticker: string) {
       maintainAspectRatio: false,
       animation: growBars(),
       plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}` } } },
-      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: (v) => `R$ ${v}` } } },
+      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: (v) => axisMoney(v) } } },
     },
   });
   // O gráfico do modal é destruído junto com ele.
@@ -506,7 +518,7 @@ function renderProventos(r: Report) {
           legend: { position: "bottom", labels: { boxWidth: 10 } },
           tooltip: { mode: "index", filter: (i) => (i.parsed.y ?? 0) > 0, callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}`, footer: (items) => `Total: ${money(items.reduce((s, i) => s + (i.parsed.y ?? 0), 0))}` } },
         },
-        scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: (v) => `R$ ${v}` } } },
+        scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: (v) => axisMoney(v) } } },
       },
     }),
   );
@@ -559,7 +571,6 @@ window.addEventListener("hashchange", () => {
 });
 
 // Links para as páginas do Ghostfolio (mesmo host, porta 3333, em português).
-const GHOSTFOLIO = `${location.protocol}//${location.hostname}:3333/pt/`;
 document.querySelectorAll<HTMLAnchorElement>("[data-gf]").forEach((a) => (a.href = GHOSTFOLIO + a.dataset.gf));
 const menuBtn = document.getElementById("gf-menu")!;
 const menuList = document.getElementById("gf-menu-list")!;
@@ -578,4 +589,15 @@ document.getElementById("account")!.addEventListener("change", (e) => {
   load();
 });
 document.getElementById("refresh")!.addEventListener("click", () => load(true));
+// Ocultar valores: só neste aparelho. (A "Vista do Apresentador" do Ghostfolio apaga os valores
+// na própria API, o que zeraria os relatórios; por isso este modo é independente.)
+privacy.on = saved("rel.privacy", "0") === "1";
+updatePrivacyButton();
+document.getElementById("privacy")!.addEventListener("click", () => {
+  privacy.on = !privacy.on;
+  save("rel.privacy", privacy.on ? "1" : "0");
+  updatePrivacyButton();
+  render();
+  toast(privacy.on ? "Valores ocultos" : "Valores visíveis");
+});
 load();
