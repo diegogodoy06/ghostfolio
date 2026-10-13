@@ -281,7 +281,8 @@ export function simulate(basePositions: SimPosition[], params: SimulationParams,
     const boughtSum = needsAssets ? buy : assets.reduce((s, a) => s + a.buy, 0);
     const soldSum = assets.reduce((s, a) => s + a.sell, 0);
     const targetValue = w(c) * totalAfter;
-    const final = catAfter + boughtSum - soldSum;
+    const manualInCat = assets.reduce((t, a) => t + a.manual, 0);
+    const final = catAfter + boughtSum - manualInCat - soldSum; // catAfter já inclui as boletas
     const excess = Math.max(0, catAfter - targetValue);
     const status: CategoryAction["status"] =
       w(c) === 0 ? "sem-meta" : soldSum > EPS ? "vender" : boughtSum > 0.5 ? "comprar" : excess > Math.max(1, targetValue * 0.005) ? "acima" : "na-meta";
@@ -310,7 +311,7 @@ export function simulate(basePositions: SimPosition[], params: SimulationParams,
     let best: { c: CategoryAction; a: AssetAction; score: number } | null = null;
     for (const c of result) {
       if (c.target <= 0 || c.status === "vender") continue;
-      const cFinal = c.afterSales + c.assets.reduce((u, a) => u + a.buy - a.sell, 0);
+      const cFinal = c.afterSales + c.assets.reduce((u, a) => u + a.buy - a.manual - a.sell, 0);
       const cGap = (c.targetValue - cFinal) / (c.targetValue || 1);
       // Só categorias ainda abaixo da meta (a sobra não deve engordar quem já passou dela).
       if (cGap <= 0) continue;
@@ -332,7 +333,7 @@ export function simulate(basePositions: SimPosition[], params: SimulationParams,
   const leftover = Math.max(0, pool);
   for (const c of result) {
     if (!c.needsAssets) c.buy = c.assets.reduce((u, a) => u + a.buy, 0);
-    c.final = c.afterSales + c.buy - c.sell;
+    c.final = c.afterSales + c.buy - c.assets.reduce((u, a) => u + a.manual, 0) - c.sell;
     if (c.status !== "vender" && c.status !== "sem-meta") {
       c.status = c.buy > 0.5 ? "comprar" : c.excess > Math.max(1, c.targetValue * 0.005) ? "acima" : "na-meta";
     }
