@@ -1,18 +1,25 @@
+@font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url("fonts/Inter-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 500; font-display: swap; src: url("fonts/Inter-Medium.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-display: swap; src: url("fonts/Inter-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-display: swap; src: url("fonts/Inter-Bold.woff2") format("woff2"); }
+
+/* Mesmo tema escuro do Ghostfolio: fundo rgb(25,25,25), primária #36cfcc, Inter, bordas 12% branco. */
 :root {
   color-scheme: dark;
-  --page: #111317;
-  --card: #1b1e24;
-  --card-2: #23272f;
-  --line: #2c3038;
-  --ink: #f2f3f5;
-  --ink-2: #b8bcc6;
-  --muted: #858a96;
-  --accent: #22c38e;
-  --accent-wash: rgba(34, 195, 142, 0.14);
-  --up: #2fcf6e;
-  --down: #f06464;
-  --radius: 14px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --page: #191919;
+  --card: #191919;
+  --card-2: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.12);
+  --ink: #ffffff;
+  --ink-2: rgba(255, 255, 255, 0.7);
+  --muted: rgba(255, 255, 255, 0.5);
+  --accent: #36cfcc;
+  --accent-wash: rgba(54, 207, 204, 0.15);
+  --on-accent: rgba(0, 0, 0, 0.87);
+  --up: #28a745;
+  --down: #dc3545;
+  --radius: 12px;
+  --font: "Inter", Roboto, "Helvetica Neue", sans-serif;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -31,7 +38,7 @@ button.icon { background: var(--card); border: 1px solid var(--line); border-rad
 .tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
 
 main { max-width: 1200px; margin: 0 auto; padding: 18px 20px 48px; display: grid; gap: 16px; }
-.card { background: var(--card); border-radius: var(--radius); padding: 18px; min-width: 0; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; min-width: 0; }
 .card h2 { font-size: 15px; margin: 0 0 12px; }
 .card h3 { font-size: 13px; color: var(--ink-2); margin: 16px 0 8px; font-weight: 600; }
 .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
@@ -73,7 +80,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 18px 20px 48px; display: grid
 .legend .num { font-variant-numeric: tabular-nums; color: var(--ink-2); }
 
 /* Categorias */
-details.cat { background: var(--card); border-radius: var(--radius); }
+details.cat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
 details.cat > summary { list-style: none; cursor: pointer; padding: 16px 18px; display: grid; grid-template-columns: 52px 1fr auto 18px; gap: 12px; align-items: center; }
 details.cat > summary::-webkit-details-marker { display: none; }
 details.cat > summary .ring { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
@@ -111,10 +118,10 @@ td .nm { color: var(--muted); font-size: 11px; max-width: 200px; overflow: hidde
 
 .toggle { display: inline-flex; background: var(--card-2); border-radius: 999px; padding: 2px; }
 .toggle button { background: none; border: 0; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; }
-.toggle button[aria-pressed="true"] { background: var(--accent); color: #0b1d16; }
+.toggle button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 
 .login { max-width: 380px; margin: 40px auto; display: grid; gap: 12px; }
-button.primary { background: var(--accent); color: #0b1d16; border: 0; border-radius: 10px; padding: 10px; font-weight: 700; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 10px; padding: 10px; font-weight: 700; cursor: pointer; }
 .error { color: var(--down); margin: 0; }
 .note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
 @media (max-width: 520px) { .brand span { display: none; } }

@@ -31,7 +31,7 @@ const authed = (req: http.IncomingMessage) => DEV_NO_AUTH || /(?:^|;\s*)rel_sess
 
 const cache = new Map<string, { at: number; data: unknown }>();
 
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css" };
+const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2" };
 
 function send(res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
   const json = typeof body !== "string";
@@ -72,13 +72,15 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, data);
     }
     // Arquivos estáticos (SPA).
-    const file = url.pathname === "/" ? "index.html" : path.basename(url.pathname);
-    const full = path.join(PUBLIC_DIR, file);
+    // Só arquivos de public/ (e public/fonts/); nada de "..".
+    const rel = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
+    const file = path.basename(rel);
+    const full = path.join(PUBLIC_DIR, /^fonts\/[\w.-]+\.woff2$/.test(rel) ? rel : file);
     if (fs.existsSync(full)) {
       res.writeHead(200, {
         "content-type": TYPES[path.extname(full)] ?? "application/octet-stream",
         "cache-control": file === "index.html" ? "no-cache" : "public, max-age=300",
-        "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+        "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'",
         "x-content-type-options": "nosniff",
       });
       return fs.createReadStream(full).pipe(res);

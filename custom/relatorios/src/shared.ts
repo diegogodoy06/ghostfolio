@@ -59,4 +59,6 @@ export interface Report {
   benchmarks: Record<string, { label: string; points: [string, number][] }>;
   incomes: IncomeItem[];
   firstDate: string;
+  /** Percentual que o próprio Ghostfolio mostra (retorno sobre o capital médio), por período. */
+  ghostfolio: Partial<Record<"MTD" | "YTD" | "12M" | "MAX", { pct: number; gain: number }>>;
 }

@@ -218,6 +218,19 @@ async function buildOnce(api: Api, accountIds: string[]): Promise<Report> {
     series(api, "YAHOO", "USDBRL", days),
   ]);
 
+  // Números do próprio Ghostfolio, para mostrar lado a lado com a rentabilidade por cota.
+  const ghostfolio: Report["ghostfolio"] = {};
+  for (const [key, range] of [["MTD", "mtd"], ["YTD", "ytd"], ["12M", "1y"], ["MAX", "max"]] as const) {
+    try {
+      const { performance: p } = await api<{ performance: { netPerformancePercentageWithCurrencyEffect: number; netPerformanceWithCurrencyEffect: number } }>(
+        `/v2/portfolio/performance?range=${range}${filter}`,
+      );
+      ghostfolio[key] = { pct: p.netPerformancePercentageWithCurrencyEffect, gain: p.netPerformanceWithCurrencyEffect };
+    } catch {
+      // período indisponível
+    }
+  }
+
   const cost = positions.reduce((s, p) => s + p.cost, 0);
   const income12m = incomes.filter((i) => i.date >= since12m).reduce((s, i) => s + i.value, 0);
   return {
@@ -245,5 +258,6 @@ async function buildOnce(api: Api, accountIds: string[]): Promise<Report> {
     },
     incomes,
     firstDate,
+    ghostfolio,
   };
 }

@@ -158,3 +158,4 @@ export function stats(r: Report, from: string, to: string) {
     sharpe: vol > 0 ? (annual - annualCdi) / vol : null,
   };
 }
+

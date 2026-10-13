@@ -6,10 +6,10 @@ import type { CategoryGroup, Position, Report } from "../shared";
 import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, real, rebased, ret, stats } from "./calc";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
-Chart.defaults.color = "#b8bcc6";
+Chart.defaults.color = "rgba(255,255,255,0.7)";
 Chart.defaults.animation = false;
-Chart.defaults.borderColor = "#2c3038";
-Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+Chart.defaults.borderColor = "rgba(255,255,255,0.12)";
+Chart.defaults.font.family = '"Inter", Roboto, "Helvetica Neue", sans-serif';
 
 // Paleta categórica validada para fundo escuro (ordem fixa, cor segue a entidade).
 const PALETTE = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#008300", "#e66767", "#898781"];
@@ -18,7 +18,7 @@ const CATEGORY_COLOR: Record<string, string> = {
   "Tesouro Direto": PALETTE[5]!, "Renda Fixa": PALETTE[6]!, Cripto: PALETTE[7]!, Outros: PALETTE[8]!,
 };
 const BENCH = [
-  { key: "carteira", label: "Carteira", color: "#22c38e" },
+  { key: "carteira", label: "Carteira", color: "#36cfcc" },
   { key: "cdi", label: "CDI", color: "#9085e9" },
   { key: "ibov", label: "Ibovespa", color: "#d95926" },
   { key: "ipca", label: "IPCA", color: "#c98500" },
@@ -141,7 +141,7 @@ function donut(canvas: HTMLCanvasElement, labels: string[], values: number[], co
   charts.push(
     new Chart(canvas, {
       type: "doughnut",
-      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: "#1b1e24", borderWidth: 2 }] },
+      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: "#191919", borderWidth: 2 }] },
       options: {
         cutout: "68%",
         maintainAspectRatio: false,
@@ -190,7 +190,7 @@ function renderResumo(r: Report) {
           <div class="bars">${items
             .map((i) => `<div class="item"><span>${i.label}</span><div class="track"><div class="fill" style="background:${i.color};left:${i.value != null && i.value < 0 ? 50 - (Math.abs(i.value) / maxAbs) * 50 : 50}%;width:${i.value == null ? 0 : (Math.abs(i.value) / maxAbs) * 50}%"></div></div><span class="v ${tone(i.value)}">${pct(i.value)}</span></div>`)
             .join("")}</div>
-          <p class="note">${nominal != null && cdi ? `Sua carteira rendeu <b>${pct(nominal)}</b> contra <b>${pct(cdi)}</b> do CDI: <b>${pct(nominal / cdi, 1)} do CDI</b>.` : ""} Rentabilidade por cota (ponderada no tempo), com proventos — mesmo método de Rico e TradeMap.${state.realMode ? " Valores reais: descontada a inflação (IPCA) do período." : ""}</p>
+          <p class="note">${nominal != null && cdi ? `Sua carteira rendeu <b>${pct(nominal)}</b> contra <b>${pct(cdi)}</b> do CDI: <b>${pct(nominal / cdi, 1)} do CDI</b>.` : ""} Rentabilidade por cota (ponderada no tempo), com proventos — mesmo método de Rico e TradeMap.${state.realMode ? " Valores reais: descontada a inflação (IPCA) do período." : ""}${ghostNote(r, gain)}</p>
         </div>
         <div>
           <div class="chips" data-role="bench">${BENCH.map((b) => `<button class="chip" data-bench="${b.key}" aria-pressed="${state.bench.has(b.key)}"><span class="dot" style="background:${b.color}"></span>${b.label}</button>`).join("")}</div>
@@ -247,7 +247,7 @@ function renderResumo(r: Report) {
       data: {
         labels: eq.map((p) => dateBR(p.date)),
         datasets: [
-          { label: "Patrimônio", data: eq.map((p) => p.value), borderColor: "#22c38e", backgroundColor: "rgba(34,195,142,0.12)", fill: true, borderWidth: 2, pointRadius: 0 },
+          { label: "Patrimônio", data: eq.map((p) => p.value), borderColor: "#36cfcc", backgroundColor: "rgba(54,207,204,0.12)", fill: true, borderWidth: 2, pointRadius: 0 },
           { label: "Investido", data: eq.map((p) => p.invested), borderColor: "#858a96", borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0 },
         ],
       },
@@ -259,6 +259,13 @@ function renderResumo(r: Report) {
       },
     }),
   );
+}
+
+/** Explica a diferença para o percentual exibido no Ghostfolio no mesmo período. */
+function ghostNote(r: Report, gain: number) {
+  const g = r.ghostfolio[state.period as keyof Report["ghostfolio"]];
+  if (!g) return "";
+  return `<br>No Ghostfolio, este período aparece como <b>${pct(g.pct)}</b>: o ganho é o mesmo (${money(g.gain)} lá, ${money(gain)} aqui), mas ele divide pelo <b>capital médio investido</b> no período. Com aportes ao longo do ano, os dois métodos dão percentuais diferentes para o mesmo dinheiro.`;
 }
 
 // ---------- Carteira ----------
@@ -364,10 +371,10 @@ function renderProventos(r: Report) {
     </section>
     <section class="grid2">
       <div class="card"><h2>Quem mais pagou (12 meses)</h2><div class="bars">${top
-        .map(([t, v]) => `<div class="item"><span>${esc(t)}</span><div class="track"><div class="fill" style="background:#22c38e;left:0;width:${(v / topMax) * 100}%"></div></div><span class="v">${money(v)}</span></div>`)
+        .map(([t, v]) => `<div class="item"><span>${esc(t)}</span><div class="track"><div class="fill" style="background:#36cfcc;left:0;width:${(v / topMax) * 100}%"></div></div><span class="v">${money(v)}</span></div>`)
         .join("")}</div></div>
       <div class="card"><h2>Por tipo</h2>${legendList([...byType.entries()].sort((a, b) => b[1] - a[1]).map(([t, v], j) => ({ label: t, value: v, weight: v / (typeTotal || 1), color: PALETTE[j % PALETTE.length]! })))}
-        <h3>Por ano</h3>${legendList([...byYear.entries()].sort().reverse().map(([yy, v]) => ({ label: yy, value: v, weight: v / (typeTotal || 1), color: "#22c38e" })))}</div>
+        <h3>Por ano</h3>${legendList([...byYear.entries()].sort().reverse().map(([yy, v]) => ({ label: yy, value: v, weight: v / (typeTotal || 1), color: "#36cfcc" })))}</div>
     </section>
     <section class="card"><h2>Últimos lançamentos</h2><div class="scroll"><table><thead><tr><th>Data</th><th>Ativo</th><th>Tipo</th><th>Valor</th></tr></thead><tbody>${[...r.incomes]
       .reverse()
@@ -390,7 +397,7 @@ function renderProventos(r: Report) {
         labels: months.map((m) => `${MONTHS[Number(m.slice(5)) - 1]}/${m.slice(2, 4)}`),
         datasets: [
           ...cats.map((c) => ({ label: c, data: months.map((m) => val(m, c, false)), backgroundColor: CATEGORY_COLOR[c] ?? PALETTE[8]!, borderRadius: 3, stack: "s" })),
-          { label: "Estimado", data: months.map((m) => cats.reduce((s, c) => s + val(m, c, true), 0)), backgroundColor: "rgba(34,195,142,0.35)", borderRadius: 3, stack: "s" },
+          { label: "Estimado", data: months.map((m) => cats.reduce((s, c) => s + val(m, c, true), 0)), backgroundColor: "rgba(54,207,204,0.35)", borderRadius: 3, stack: "s" },
         ],
       },
       options: {
