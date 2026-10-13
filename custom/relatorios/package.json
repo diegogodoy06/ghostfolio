@@ -5,7 +5,7 @@
   "scripts": {
     "build": "npm run build:server && npm run build:web",
     "build:server": "esbuild src/server/main.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/server.js",
-    "build:web": "esbuild src/web/app.ts --bundle --minify --target=es2022 --outfile=dist/public/app.js && cp src/web/index.html src/web/styles.css dist/public/ && cp -r src/web/fonts dist/public/",
+    "build:web": "esbuild src/web/app.ts --bundle --minify --target=es2022 --outfile=dist/public/app.js && node build-web.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

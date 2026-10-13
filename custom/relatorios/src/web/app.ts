@@ -4,21 +4,18 @@ import {
 } from "chart.js";
 import type { CategoryGroup, Position, Report } from "../shared";
 import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, real, rebased, ret, stats } from "./calc";
+import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, dateBR, esc, money, openModal, pct, qty, skeleton, spct, tone } from "./ui";
+import { renderSimulacao } from "./simulacao";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
 Chart.defaults.color = "rgba(255,255,255,0.7)";
-Chart.defaults.animation = false;
+// Animação curta só na entrada; dados mudam sem "crescer do zero".
+Chart.defaults.animation = { duration: 450, easing: "easeOutQuart" };
 Chart.defaults.borderColor = "rgba(255,255,255,0.12)";
 Chart.defaults.font.family = '"Inter", Roboto, "Helvetica Neue", sans-serif';
 
-// Paleta categórica validada para fundo escuro (ordem fixa, cor segue a entidade).
-const PALETTE = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#008300", "#e66767", "#898781"];
-const CATEGORY_COLOR: Record<string, string> = {
-  Ações: PALETTE[0]!, FIIs: PALETTE[1]!, ETFs: PALETTE[2]!, BDRs: PALETTE[3]!, Exterior: PALETTE[4]!,
-  "Tesouro Direto": PALETTE[5]!, "Renda Fixa": PALETTE[6]!, Cripto: PALETTE[7]!, Outros: PALETTE[8]!,
-};
 const BENCH = [
-  { key: "carteira", label: "Carteira", color: "#36cfcc" },
+  { key: "carteira", label: "Carteira", color: ACCENT },
   { key: "cdi", label: "CDI", color: "#9085e9" },
   { key: "ibov", label: "Ibovespa", color: "#d95926" },
   { key: "ipca", label: "IPCA", color: "#c98500" },
@@ -27,19 +24,8 @@ const BENCH = [
   { key: "usd", label: "Dólar", color: "#e66767" },
 ] as const;
 
-// ---------- formatação ----------
-const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const money = (n: number) => brl.format(n);
-const pct = (n: number | null | undefined, d = 2) => (n == null || !Number.isFinite(n) ? "—" : `${(n * 100).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d })}%`);
-const spct = (n: number | null | undefined, d = 2) => (n == null ? "—" : `${n > 0 ? "+" : ""}${pct(n, d)}`);
-const qty = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
-const tone = (n: number | null | undefined) => (n == null ? "" : n > 0.00005 ? "up" : n < -0.00005 ? "down" : "");
-const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-const dateBR = (d: string) => d.split("-").reverse().join("/");
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
 // ---------- estado ----------
-type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade";
+type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade" | "simulacao";
 const saved = (k: string, d: string) => {
   try {
     return localStorage.getItem(k) ?? d;
@@ -67,7 +53,18 @@ let charts: Chart[] = [];
 const main = document.getElementById("main")!;
 
 async function load(refresh = false) {
-  main.innerHTML = `<p class="muted center">Carregando…</p>`;
+  const btn = document.getElementById("refresh")!;
+  btn.classList.add("spin");
+  main.classList.remove("enter");
+  main.innerHTML = skeleton(state.tab);
+  try {
+    await fetchReport(refresh);
+  } finally {
+    btn.classList.remove("spin");
+  }
+}
+
+async function fetchReport(refresh: boolean) {
   const res = await fetch(`/api/report?accounts=${encodeURIComponent(state.account)}${refresh ? "&refresh=1" : ""}`);
   if (res.status === 401) return showLogin();
   if (!res.ok) {
@@ -111,7 +108,10 @@ function render() {
     main.innerHTML = `<div class="card"><p class="muted">Ainda não há atividades nesta carteira.</p></div>`;
     return;
   }
-  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade })[state.tab](r);
+  main.classList.remove("enter");
+  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade, simulacao: renderSimulacao })[state.tab](r, main, charts);
+  void main.offsetWidth; // reinicia a animação de entrada
+  main.classList.add("enter");
 }
 
 // ---------- componentes ----------
@@ -185,7 +185,7 @@ function renderResumo(r: Report) {
     <section class="card">
       <div class="row-between"><h2>Meu desempenho</h2>${realToggle()}</div>
       ${periodChips()}
-      <div class="grid2">
+      <div class="split-1-2">
         <div>
           <div class="bars">${items
             .map((i) => `<div class="item"><span>${i.label}</span><div class="track"><div class="fill" style="background:${i.color};left:${i.value != null && i.value < 0 ? 50 - (Math.abs(i.value) / maxAbs) * 50 : 50}%;width:${i.value == null ? 0 : (Math.abs(i.value) / maxAbs) * 50}%"></div></div><span class="v ${tone(i.value)}">${pct(i.value)}</span></div>`)
@@ -198,7 +198,7 @@ function renderResumo(r: Report) {
         </div>
       </div>
     </section>
-    <section class="grid2">
+    <section class="split">
       <div class="card"><h2>Alocação</h2><div class="chart-box donut"><canvas id="alloc"></canvas></div><h3>Por categoria</h3>${legendList(r.categories.map((c) => ({ label: c.name, value: c.value, weight: c.weight, color: CATEGORY_COLOR[c.name] ?? PALETTE[8]! })))}</div>
       <div class="card"><h2>Evolução do patrimônio</h2><div class="chart-box"><canvas id="equity"></canvas></div><p class="note">Valor de mercado × valor investido.</p></div>
     </section>`;
@@ -272,7 +272,7 @@ function ghostNote(r: Report, gain: number) {
 function positionsTable(ps: Position[]) {
   const rows = ps
     .map(
-      (p) => `<tr>
+      (p) => `<tr class="clickable" data-ticker="${esc(p.ticker)}">
       <td><div class="tk">${esc(p.ticker)}</div><div class="nm">${esc(p.subcategory)}</div></td>
       <td>${qty(p.quantity)}</td><td>${money(p.avgPrice)}</td><td>${money(p.price)}</td><td>${money(p.value)}</td>
       <td class="${tone(p.gain)}">${money(p.gain)}<div class="small">${spct(p.gainPct)}</div></td>
@@ -281,7 +281,7 @@ function positionsTable(ps: Position[]) {
     .join("");
   const cards = ps
     .map(
-      (p) => `<div class="pos"><div class="head"><span>${esc(p.ticker)} <span class="muted small">${qty(p.quantity)} cotas</span></span><span>${money(p.value)}</span></div>
+      (p) => `<div class="pos" data-ticker="${esc(p.ticker)}"><div class="head"><span>${esc(p.ticker)} <span class="muted small">${qty(p.quantity)} cotas</span></span><span>${money(p.value)}</span></div>
       <div class="grid"><div><div class="l">P. médio</div>${money(p.avgPrice)}</div><div><div class="l">Preço</div>${money(p.price)}</div><div><div class="l">Retorno</div><span class="${tone(p.gain)}">${spct(p.gainPct, 1)}</span></div>
       <div><div class="l">Proventos</div>${money(p.income)}</div><div><div class="l">% classe</div>${pct(p.weightInCategory, 1)}</div><div><div class="l">% carteira</div>${pct(p.weight, 1)}</div></div></div>`,
     )
@@ -292,7 +292,7 @@ function positionsTable(ps: Position[]) {
 function renderCarteira(r: Report) {
   const total = r.summary.value;
   main.innerHTML =
-    `<section class="grid2"><div class="card"><h2>Minha carteira · ${money(total)}</h2><div class="chart-box donut"><canvas id="alloc"></canvas></div></div>
+    `<section class="split"><div class="card"><h2>Minha carteira · ${money(total)}</h2><div class="chart-box donut"><canvas id="alloc"></canvas></div></div>
      <div class="card"><h2>Por categoria</h2>${legendList(r.categories.map((c) => ({ label: c.name, value: c.value, weight: c.weight, color: CATEGORY_COLOR[c.name] ?? PALETTE[8]! })))}
      <p class="note">Ajuste a categoria de um ativo em <code>extratos/categorias.json</code>.</p></div></section>` +
     r.categories
@@ -304,7 +304,7 @@ function renderCarteira(r: Report) {
           <span><div class="t">${esc(c.name)}</div><div class="muted small">${c.positions.length} ativo(s) · custo ${money(c.cost)}</div></span>
           <span style="text-align:right"><div class="t">${money(c.value)}</div><div class="small ${tone(gain)}">${spct(c.cost ? gain / c.cost : null)}</div></span>
           <span class="chev">›</span></summary>
-        <div class="body"><div class="grid2"><div class="chart-box donut"><canvas id="sub-${i}"></canvas></div><div>${legendList(c.subgroups.map((g, j) => ({ label: g.name, value: g.value, weight: g.weight, color: PALETTE[j % PALETTE.length]! })))}</div></div>
+        <div class="body"><div class="split"><div class="chart-box donut"><canvas id="sub-${i}"></canvas></div><div>${legendList(c.subgroups.map((g, j) => ({ label: g.name, value: g.value, weight: g.weight, color: PALETTE[j % PALETTE.length]! })))}</div></div>
         <h3>Ativos</h3>${positionsTable(c.positions)}</div></details>`;
       })
       .join("");
@@ -314,10 +314,61 @@ function renderCarteira(r: Report) {
     const el = document.getElementById(`sub-${i}`) as HTMLCanvasElement | null;
     if (el && !Chart.getChart(el)) donut(el, c.subgroups.map((g) => g.name), c.subgroups.map((g) => g.value), c.subgroups.map((_, j) => PALETTE[j % PALETTE.length]!));
   };
+  main.querySelectorAll<HTMLElement>("[data-ticker]").forEach((el) => el.addEventListener("click", () => assetModal(r, el.dataset.ticker!)));
   main.querySelectorAll("details.cat").forEach((d, i) => {
     if ((d as HTMLDetailsElement).open) drawSub(i);
     d.addEventListener("toggle", () => (d as HTMLDetailsElement).open && drawSub(i));
   });
+}
+
+/** Detalhe de um ativo: posição, retorno e histórico de proventos. */
+function assetModal(r: Report, ticker: string) {
+  const p = r.categories.flatMap((c) => c.positions).find((x) => x.ticker === ticker);
+  if (!p) return;
+  const incomes = r.incomes.filter((i) => i.ticker === ticker);
+  const today = new Date();
+  const months: string[] = [];
+  for (let k = 23; k >= 0; k--) months.push(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - k, 1)).toISOString().slice(0, 7));
+  const yoc = p.cost > 0 ? p.income12m / p.cost : null;
+  const m = openModal(
+    `${p.ticker} · ${p.category}`,
+    `<p class="muted" style="margin-top:0">${esc(p.name)} · ${esc(p.subcategory)}</p>
+     <div class="stats">
+       <div class="stat"><div class="l">Quantidade</div><div class="v">${qty(p.quantity)}</div></div>
+       <div class="stat"><div class="l">Preço médio</div><div class="v">${money(p.avgPrice)}</div></div>
+       <div class="stat"><div class="l">Preço atual</div><div class="v">${money(p.price)}</div></div>
+       <div class="stat"><div class="l">Valor</div><div class="v">${money(p.value)}</div></div>
+       <div class="stat"><div class="l">Valorização</div><div class="v ${tone(p.gain)}">${spct(p.gainPct)}</div><div class="small ${tone(p.gain)}">${money(p.gain)}</div></div>
+       <div class="stat"><div class="l">Proventos (total)</div><div class="v">${money(p.income)}</div></div>
+       <div class="stat"><div class="l">Yield sobre custo (12m)</div><div class="v">${pct(yoc)}</div></div>
+       <div class="stat"><div class="l">% da carteira</div><div class="v">${pct(p.weight, 1)}</div><div class="small muted">${pct(p.weightInCategory, 1)} da classe</div></div>
+     </div>
+     <h3>Proventos por mês (24 meses)</h3><div class="chart-box" style="height:220px"><canvas id="asset-inc"></canvas></div>`,
+    { wide: true },
+  );
+  const chart = new Chart(m.el.querySelector("#asset-inc") as HTMLCanvasElement, {
+    type: "bar",
+    data: {
+      labels: months.map((x) => `${MONTHS[Number(x.slice(5)) - 1]}/${x.slice(2, 4)}`),
+      datasets: [
+        { label: "Recebido", data: months.map((x) => incomes.filter((i) => !i.estimated && i.date.startsWith(x)).reduce((s, i) => s + i.value, 0)), backgroundColor: ACCENT, borderRadius: 3, stack: "s" },
+        { label: "Estimado", data: months.map((x) => incomes.filter((i) => i.estimated && i.date.startsWith(x)).reduce((s, i) => s + i.value, 0)), backgroundColor: "rgba(54,207,204,0.35)", borderRadius: 3, stack: "s" },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}` } } },
+      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: (v) => `R$ ${v}` } } },
+    },
+  });
+  // O gráfico do modal é destruído junto com ele.
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(m.el)) {
+      chart.destroy();
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true });
 }
 
 // ---------- Proventos ----------
@@ -369,7 +420,7 @@ function renderProventos(r: Report) {
       <div class="chart-box tall"><canvas id="monthly"></canvas></div>
       <p class="note">Barras por categoria; o segmento mais claro no topo são os proventos estimados (data ex), que viram valores reais quando o extrato da B3 chega.</p>
     </section>
-    <section class="grid2">
+    <section class="split">
       <div class="card"><h2>Quem mais pagou (12 meses)</h2><div class="bars">${top
         .map(([t, v]) => `<div class="item"><span>${esc(t)}</span><div class="track"><div class="fill" style="background:#36cfcc;left:0;width:${(v / topMax) * 100}%"></div></div><span class="v">${money(v)}</span></div>`)
         .join("")}</div></div>
@@ -450,7 +501,7 @@ document.querySelectorAll<HTMLButtonElement>(".tabs button").forEach((b) =>
 );
 window.addEventListener("hashchange", () => {
   const t = location.hash.slice(1) as Tab;
-  if (t !== state.tab && ["resumo", "carteira", "proventos", "rentabilidade"].includes(t)) {
+  if (t !== state.tab && ["resumo", "carteira", "proventos", "rentabilidade", "simulacao"].includes(t)) {
     state.tab = t;
     render();
   }

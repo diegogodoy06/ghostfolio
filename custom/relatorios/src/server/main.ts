@@ -31,6 +31,44 @@ const authed = (req: http.IncomingMessage) => DEV_NO_AUTH || /(?:^|;\s*)rel_sess
 
 const cache = new Map<string, { at: number; data: unknown }>();
 
+// ---- Simulação: uma única, salva em /data (volume). Guarda a intenção, não o resultado. ----
+const DATA_DIR = process.env.DATA_DIR ?? "/data";
+const SIM_FILE = path.join(DATA_DIR, "simulacao.json");
+function readSimulation() {
+  try {
+    return JSON.parse(fs.readFileSync(SIM_FILE, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function writeSimulation(data: unknown) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = `${SIM_FILE}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, SIM_FILE); // gravação atômica
+}
+
+// ---- Cotação de ativos fora da carteira (Yahoo), para a simulação. ----
+const quoteCache = new Map<string, { at: number; data: { ticker: string; price: number | null; name: string | null } }>();
+async function quote(ticker: string) {
+  const hit = quoteCache.get(ticker);
+  if (hit && Date.now() - hit.at < 15 * 60_000) return hit.data;
+  const symbol = /^[A-Z]{4}\d{1,2}$/.test(ticker) ? `${ticker}.SA` : ticker;
+  let data: { ticker: string; price: number | null; name: string | null } = { ticker, price: null, name: null };
+  try {
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`, {
+      headers: { "User-Agent": "Mozilla/5.0 (ghostfolio-relatorios)" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const meta = ((await r.json()) as any)?.chart?.result?.[0]?.meta;
+    if (meta?.regularMarketPrice) data = { ticker, price: meta.regularMarketPrice, name: meta.longName ?? meta.shortName ?? null };
+  } catch {
+    // sem cotação: a simulação mostra só o valor em R$
+  }
+  quoteCache.set(ticker, { at: Date.now(), data });
+  return data;
+}
+
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2" };
 
 function send(res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
@@ -39,11 +77,11 @@ function send(res: http.ServerResponse, status: number, body: unknown, headers: 
   res.end(json ? JSON.stringify(body) : body);
 }
 
-async function readBody(req: http.IncomingMessage) {
+async function readBody(req: http.IncomingMessage, limit = 10_000) {
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 10_000) throw new Error("corpo grande demais");
+    if (raw.length > limit) throw new Error("corpo grande demais");
   }
   return JSON.parse(raw || "{}");
 }
@@ -71,6 +109,22 @@ const server = http.createServer(async (req, res) => {
       cache.set(key, { at: Date.now(), data });
       return send(res, 200, data);
     }
+    if (url.pathname === "/api/quote") {
+      if (!authed(req)) return send(res, 401, { error: "login" });
+      const t = (url.searchParams.get("t") ?? "").toUpperCase().replace(/[^A-Z0-9.^-]/g, "");
+      if (!t) return send(res, 400, { error: "ticker" });
+      return send(res, 200, await quote(t));
+    }
+    if (url.pathname === "/api/simulation") {
+      if (!authed(req)) return send(res, 401, { error: "login" });
+      if (req.method === "GET") return send(res, 200, readSimulation());
+      if (req.method === "PUT") {
+        const body = await readBody(req, 200_000);
+        if (!body || typeof body !== "object" || Array.isArray(body)) return send(res, 400, { error: "simulação inválida" });
+        writeSimulation({ ...body, updatedAt: new Date().toISOString() });
+        return send(res, 200, { ok: true });
+      }
+    }
     // Arquivos estáticos (SPA).
     // Só arquivos de public/ (e public/fonts/); nada de "..".
     const rel = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
@@ -79,7 +133,8 @@ const server = http.createServer(async (req, res) => {
     if (fs.existsSync(full)) {
       res.writeHead(200, {
         "content-type": TYPES[path.extname(full)] ?? "application/octet-stream",
-        "cache-control": file === "index.html" ? "no-cache" : "public, max-age=300",
+        // Sempre revalida: atualizações do app aparecem na hora (fontes podem ficar em cache).
+        "cache-control": rel.startsWith("fonts/") ? "public, max-age=604800" : "no-cache",
         "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'",
         "x-content-type-options": "nosniff",
       });

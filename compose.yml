@@ -41,8 +41,10 @@ services:
     environment:
       GHOSTFOLIO_URL: http://ghostfolio:3333
       EXTRATOS_DIR: /extratos
+      DATA_DIR: /data
     volumes:
       - ./extratos:/extratos:ro
+      - relatorios-data:/data
     ports:
       - 3334:3334
     depends_on:
@@ -51,3 +53,4 @@ services:
 
 volumes:
   sync-data:
+  relatorios-data:

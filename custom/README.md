@@ -16,6 +16,7 @@ Relatórios no estilo das corretoras brasileiras, sobre os dados do Ghostfolio. 
 - **Carteira**: categorias (Ações por setor, FIIs por tipo, ETFs, Exterior, Tesouro, Renda Fixa) com cada ativo: quantidade, preço médio, preço, retorno, proventos, % da classe e % da carteira.
 - **Proventos**: evolução mensal por categoria, recebidos × estimados, quem mais pagou, por tipo e por ano.
 - **Rentabilidade**: tabela mês a mês com % do CDI e estatísticas (volatilidade, maior queda, melhor/pior mês, Sharpe).
+- **Simulação**: metas por categoria + novo aporte + vendas planejadas → o que comprar, vender ou deixar de aportar, por categoria e por ativo (com cotas inteiras). O dinheiro vai primeiro para o que está mais longe da meta; categorias acima da meta não recebem aporte (ou, com o rebalanceamento completo ligado, vendem o excedente). Dentro de cada categoria, divida proporcionalmente, em partes iguais ou com pesos próprios, inclusive para ativos que você ainda não tem. Uma simulação fica salva no servidor (volume `relatorios-data`) e é sempre recalculada com a carteira atual — salva-se a intenção, não o resultado.
 
 A rentabilidade é por cota (ponderada no tempo) e **inclui proventos**, como Rico e TradeMap; por isso difere do gráfico de Análise do Ghostfolio, que exclui proventos. Categorias podem ser ajustadas em `extratos/categorias.json`, por exemplo `{ "ITSA4": { "subcategoria": "Financeiro" } }`.
 
