@@ -34,12 +34,29 @@ export interface AssetPlan {
   extra?: string[];
 }
 
+/** Compra manual (boleta): por quantidade de cotas ou por valor em R$. */
+export interface BuyParam {
+  ticker: string;
+  mode: "qty" | "value";
+  amount: number;
+}
+
+export interface Quote {
+  price: number;
+  category?: string;
+  name?: string | null;
+}
+
 export interface SimulationParams {
   version: 1;
   /** Meta por categoria, em % do patrimônio. */
   targets: Record<string, number>;
   contribution: number;
   sales: SaleParam[];
+  /** Compras manuais (boletas); o restante do dinheiro é distribuído automaticamente. */
+  buys?: BuyParam[];
+  /** Distribuir automaticamente o dinheiro que sobrar das boletas. */
+  autoAllocate?: boolean;
   allowSells: boolean;
   wholeShares: boolean;
   assetPlans: Record<string, AssetPlan>;
@@ -57,6 +74,8 @@ export interface AssetAction {
   quantity: number | null;
   /** Negociado só em cotas inteiras. */
   whole: boolean;
+  /** Parte da compra que veio de boleta manual. */
+  manual: number;
   /** Valor-alvo do ativo depois da operação (uso interno do reinvestimento da sobra). */
   goal: number;
 }
@@ -86,6 +105,12 @@ export interface SaleResult {
 }
 
 export interface SimResult {
+  /** Compras manuais (boletas) somadas. */
+  manualBuys: number;
+  /** Dinheiro que falta quando as boletas passam do disponível. */
+  deficit: number;
+  /** Compras manuais resolvidas (quantidade e valor). */
+  buys: { ticker: string; category: string; quantity: number; value: number; price: number | null; isNew: boolean }[];
   totalBefore: number;
   totalAfter: number;
   contribution: number;
@@ -130,7 +155,17 @@ export function defaultParams(positions: SimPosition[]): SimulationParams {
 }
 
 /** `prices`: cotação dos ativos novos (fora da carteira), buscada pelo servidor. */
-export function simulate(positions: SimPosition[], params: SimulationParams, prices: Record<string, number> = {}): SimResult {
+export function simulate(basePositions: SimPosition[], params: SimulationParams, quotes: Record<string, Quote> = {}): SimResult {
+  // Ativos de boletas que ainda não estão na carteira entram como posições vazias.
+  const newTickers = new Set<string>();
+  const positions = [...basePositions];
+  for (const b of params.buys ?? []) {
+    if (positions.some((p) => p.ticker === b.ticker)) continue;
+    const q = quotes[b.ticker];
+    positions.push({ ticker: b.ticker, category: q?.category ?? "Outros", value: 0, price: q?.price ?? 0, quantity: 0 });
+    newTickers.add(b.ticker);
+  }
+  const prices = Object.fromEntries(Object.entries(quotes).map(([k, v]) => [k, v.price]));
   const byTicker = new Map(positions.map((p) => [p.ticker, p]));
 
   // 1) Vendas planejadas.
@@ -152,8 +187,23 @@ export function simulate(positions: SimPosition[], params: SimulationParams, pri
   const contribution = Math.max(0, params.contribution || 0);
   const available = contribution + fromSales;
 
-  // 2) Valores por categoria depois das vendas.
-  const valueAfter = (p: SimPosition) => Math.max(0, p.value - (sold.get(p.ticker) ?? 0));
+  // 1b) Compras manuais (boletas).
+  const manual = new Map<string, number>();
+  const buys = (params.buys ?? []).map((b) => {
+    const p = byTicker.get(b.ticker)!;
+    const price = p.price > 0 ? p.price : null;
+    const whole = !!params.wholeShares && wholeLot(b.ticker, p.category);
+    const quantity = !price ? 0 : b.mode === "qty" ? b.amount : whole ? Math.floor(b.amount / price + EPS) : b.amount / price;
+    const value = price ? quantity * price : b.mode === "value" ? b.amount : 0;
+    manual.set(b.ticker, (manual.get(b.ticker) ?? 0) + value);
+    return { ticker: b.ticker, category: p.category, quantity, value, price, isNew: newTickers.has(b.ticker) };
+  });
+  const manualBuys = buys.reduce((s, b) => s + b.value, 0);
+  const autoCash = params.autoAllocate === false ? 0 : Math.max(0, available - manualBuys);
+  const deficit = Math.max(0, manualBuys - available);
+
+  // 2) Valores por categoria depois das vendas e das boletas.
+  const valueAfter = (p: SimPosition) => Math.max(0, p.value - (sold.get(p.ticker) ?? 0)) + (manual.get(p.ticker) ?? 0);
   const totalBefore = positions.reduce((s, p) => s + p.value, 0);
   const totalAfter = totalBefore + contribution;
   const categories = [...new Set([...positions.map((p) => p.category), ...Object.keys(params.targets).filter((c) => (params.targets[c] ?? 0) > 0)])];
@@ -162,18 +212,18 @@ export function simulate(positions: SimPosition[], params: SimulationParams, pri
   const current = (c: string) => positions.filter((p) => p.category === c).reduce((s, p) => s + p.value, 0);
   const afterSales = (c: string) => positions.filter((p) => p.category === c).reduce((s, p) => s + valueAfter(p), 0);
 
-  // 3) Quanto cada categoria compra/vende.
-  const buys = new Map<string, number>();
+  // 3) Quanto cada categoria compra/vende (automático).
+  const catBuys = new Map<string, number>();
   const sells = new Map<string, number>();
   if (params.allowSells) {
     for (const c of categories) {
       const diff = w(c) * totalAfter - afterSales(c);
-      if (diff > 0) buys.set(c, diff);
+      if (diff > 0) catBuys.set(c, diff);
       else sells.set(c, -diff);
     }
   } else {
-    const alloc = waterFill(available, categories.map((c) => ({ v: afterSales(c), w: w(c) })), totalAfter);
-    categories.forEach((c, i) => buys.set(c, alloc[i]!));
+    const alloc = waterFill(autoCash, categories.map((c) => ({ v: afterSales(c), w: w(c) })), totalAfter);
+    categories.forEach((c, i) => catBuys.set(c, alloc[i]!));
   }
 
   // 4) Dentro de cada categoria, por ativo.
@@ -182,9 +232,9 @@ export function simulate(positions: SimPosition[], params: SimulationParams, pri
     const fullySold = new Set(params.sales.filter((s) => s.mode === "all").map((s) => s.ticker));
     const own = positions.filter((p) => p.category === c && !fullySold.has(p.ticker));
     const extras = (plan.extra ?? []).filter((t) => !byTicker.has(t));
-    const members = [...own.map((p) => ({ ticker: p.ticker, v: valueAfter(p), price: p.price, isNew: false })), ...extras.map((t) => ({ ticker: t, v: 0, price: (prices[t] ?? null) as number | null, isNew: true }))];
+    const members = [...own.map((p) => ({ ticker: p.ticker, v: valueAfter(p), price: p.price > 0 ? p.price : null, isNew: newTickers.has(p.ticker) })), ...extras.map((t) => ({ ticker: t, v: 0, price: (prices[t] ?? null) as number | null, isNew: true }))];
     const catAfter = afterSales(c);
-    const buy = buys.get(c) ?? 0;
+    const buy = catBuys.get(c) ?? 0;
     const sell = sells.get(c) ?? 0;
 
     const rawW = members.map((m) =>
@@ -220,7 +270,11 @@ export function simulate(positions: SimPosition[], params: SimulationParams, pri
           q = -sl / m.price;
         }
       }
-      return { ticker: m.ticker, isNew: m.isNew, price: m.price, current: m.v, buy: b, sell: sl, quantity: q, whole, goal };
+      // Soma a compra manual (boleta) à automática.
+      const man = manual.get(m.ticker) ?? 0;
+      const manQ = m.price ? man / m.price : 0;
+      const current = m.v - man;
+      return { ticker: m.ticker, isNew: m.isNew, price: m.price, current, buy: b + man, sell: sl, quantity: q != null || man ? (q ?? 0) + manQ : null, whole, goal, manual: man };
     });
 
     const needsAssets = buy > 0.5 && members.length === 0;
@@ -252,7 +306,7 @@ export function simulate(positions: SimPosition[], params: SimulationParams, pri
   const spent = () => result.reduce((t, c) => t + (c.needsAssets ? c.buy : c.assets.reduce((u, a) => u + a.buy, 0)), 0);
   const raised = () => result.reduce((t, c) => t + c.assets.reduce((u, a) => u + a.sell, 0), 0);
   let pool = available + raised() - spent();
-  for (let guard = 0; guard < 5000 && pool > EPS; guard++) {
+  for (let guard = 0; guard < 5000 && pool > EPS && params.autoAllocate !== false; guard++) {
     let best: { c: CategoryAction; a: AssetAction; score: number } | null = null;
     for (const c of result) {
       if (c.target <= 0 || c.status === "vender") continue;
@@ -284,9 +338,12 @@ export function simulate(positions: SimPosition[], params: SimulationParams, pri
     }
   }
 
-  for (const c of result) c.assets = c.assets.filter((a) => a.buy > EPS || a.sell > EPS || a.isNew).sort((a, b) => b.buy + b.sell - (a.buy + a.sell));
+  for (const c of result) c.assets = c.assets.filter((a) => a.buy > EPS || a.sell > EPS || a.isNew || a.manual > EPS).sort((a, b) => b.buy + b.sell - (a.buy + a.sell));
 
   return {
+    manualBuys,
+    deficit,
+    buys,
     totalBefore,
     totalAfter,
     contribution,

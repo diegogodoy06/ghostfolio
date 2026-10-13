@@ -5,7 +5,7 @@ import {
 import type { CategoryGroup, Position, Report } from "../shared";
 import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, real, rebased, ret, stats } from "./calc";
 import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, dateBR, esc, money, openModal, pct, qty, skeleton, spct, tone } from "./ui";
-import { renderSimulacao } from "./simulacao";
+import { mountSimSummary, renderCarteiraSim } from "./simulacao";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
 Chart.defaults.color = "rgba(255,255,255,0.7)";
@@ -25,7 +25,18 @@ const BENCH = [
 ] as const;
 
 // ---------- estado ----------
-type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade" | "simulacao";
+type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade";
+const TABS: Tab[] = ["resumo", "carteira", "proventos", "rentabilidade"];
+const TITLES: Record<Tab, string> = { resumo: "Resumo", carteira: "Carteira", proventos: "Proventos", rentabilidade: "Rentabilidade" };
+/** Hash inicial; "#simulacao" (endereço antigo) abre a Carteira já no modo simulação. */
+function tabFromHash(): Tab {
+  const h = location.hash.slice(1);
+  if (h === "simulacao") {
+    save("rel.carteiraMode", "sim");
+    return "carteira";
+  }
+  return (TABS as string[]).includes(h) ? (h as Tab) : "resumo";
+}
 const saved = (k: string, d: string) => {
   try {
     return localStorage.getItem(k) ?? d;
@@ -41,7 +52,8 @@ const save = (k: string, v: string) => {
   }
 };
 const state = {
-  tab: (location.hash.slice(1) || "resumo") as Tab,
+  tab: "resumo" as Tab,
+  carteiraMode: "atual" as "atual" | "sim",
   period: saved("rel.period", "12M") as PeriodId,
   realMode: saved("rel.real", "0") === "1",
   bench: new Set(saved("rel.bench", "carteira,cdi,ibov").split(",")),
@@ -49,6 +61,8 @@ const state = {
   incomeRange: saved("rel.incomeRange", "24"),
   report: null as Report | null,
 };
+state.tab = tabFromHash();
+state.carteiraMode = saved("rel.carteiraMode", "atual") === "sim" ? "sim" : "atual";
 let charts: Chart[] = [];
 const main = document.getElementById("main")!;
 
@@ -108,8 +122,10 @@ function render() {
     main.innerHTML = `<div class="card"><p class="muted">Ainda não há atividades nesta carteira.</p></div>`;
     return;
   }
+  document.getElementById("page-title")!.textContent = TITLES[state.tab] + (state.tab === "carteira" && state.carteiraMode === "sim" ? " · simulação" : "");
+  document.title = `${TITLES[state.tab]} · Ghostfolio`;
   main.classList.remove("enter");
-  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade, simulacao: renderSimulacao })[state.tab](r, main, charts);
+  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade })[state.tab](r);
   void main.offsetWidth; // reinicia a animação de entrada
   main.classList.add("enter");
 }
@@ -182,6 +198,7 @@ function renderResumo(r: Report) {
       <div class="card kpi"><div class="label">Proventos 12 meses</div><div class="value">${money(s.income12m)}</div><div class="sub">yield ${pct(s.yield12m)}</div></div>
       <div class="card kpi"><div class="label">Rendimento no período</div><div class="value ${tone(gain)}">${money(gain)}</div><div class="sub">sendo ${money(incomesPeriod)} em proventos</div></div>
     </section>
+    <section id="sim-summary"></section>
     <section class="card">
       <div class="row-between"><h2>Meu desempenho</h2>${realToggle()}</div>
       ${periodChips()}
@@ -211,6 +228,8 @@ function renderResumo(r: Report) {
       render();
     }),
   );
+
+  mountSimSummary(document.getElementById("sim-summary")!, r, () => openCarteira("sim"));
 
   // Desempenho: carteira x referências, rebaseadas a 0%.
   const days = r.daily.filter((p) => p.date >= from).map((p) => p.date);
@@ -289,9 +308,28 @@ function positionsTable(ps: Position[]) {
   return `<div class="scroll pos-table"><table><thead><tr><th>Ativo</th><th>Qtde</th><th>P. médio</th><th>Preço</th><th>Valor</th><th>Retorno</th><th>Proventos</th><th>% classe</th><th>% carteira</th></tr></thead><tbody>${rows}</tbody></table></div><div class="pos-cards">${cards}</div>`;
 }
 
+function openCarteira(mode: "atual" | "sim") {
+  state.carteiraMode = mode;
+  save("rel.carteiraMode", mode);
+  state.tab = "carteira";
+  history.replaceState(null, "", "#carteira");
+  render();
+  window.scrollTo(0, 0);
+}
+
+/** Seletor "Carteira atual | Simulação" (como a conta simulação do TradeMap). */
+const modeBar = () => `<section class="mode-bar"><div class="toggle" role="group" aria-label="Modo da carteira">
+    <button data-cmode="atual" aria-pressed="${state.carteiraMode === "atual"}">Carteira atual</button>
+    <button data-cmode="sim" aria-pressed="${state.carteiraMode === "sim"}">Simulação</button></div>
+    <span class="muted small">${state.carteiraMode === "sim" ? "Simule aportes e boletas de compra e venda sem alterar o Ghostfolio." : "Posições reais vindas do Ghostfolio."}</span></section>`;
+const wireModeBar = () =>
+  main.querySelectorAll<HTMLButtonElement>("[data-cmode]").forEach((b) => b.addEventListener("click", () => b.dataset.cmode !== state.carteiraMode && openCarteira(b.dataset.cmode as "atual" | "sim")));
+
 function renderCarteira(r: Report) {
+  if (state.carteiraMode === "sim") return renderCarteiraSim(r, main, modeBar(), wireModeBar);
   const total = r.summary.value;
   main.innerHTML =
+    modeBar() +
     `<section class="split"><div class="card"><h2>Minha carteira · ${money(total)}</h2><div class="chart-box donut"><canvas id="alloc"></canvas></div></div>
      <div class="card"><h2>Por categoria</h2>${legendList(r.categories.map((c) => ({ label: c.name, value: c.value, weight: c.weight, color: CATEGORY_COLOR[c.name] ?? PALETTE[8]! })))}
      <p class="note">Ajuste a categoria de um ativo em <code>extratos/categorias.json</code>.</p></div></section>` +
@@ -308,6 +346,7 @@ function renderCarteira(r: Report) {
         <h3>Ativos</h3>${positionsTable(c.positions)}</div></details>`;
       })
       .join("");
+  wireModeBar();
   donut(document.getElementById("alloc") as HTMLCanvasElement, r.categories.map((c) => c.name), r.categories.map((c) => c.value), r.categories.map((c) => CATEGORY_COLOR[c.name] ?? PALETTE[8]!));
   const drawSub = (i: number) => {
     const c = r.categories[i]!;
@@ -500,11 +539,28 @@ document.querySelectorAll<HTMLButtonElement>(".tabs button").forEach((b) =>
   }),
 );
 window.addEventListener("hashchange", () => {
-  const t = location.hash.slice(1) as Tab;
-  if (t !== state.tab && ["resumo", "carteira", "proventos", "rentabilidade", "simulacao"].includes(t)) {
+  const t = tabFromHash();
+  if (location.hash === "#simulacao") state.carteiraMode = "sim";
+  if (t !== state.tab || location.hash === "#simulacao") {
     state.tab = t;
+    history.replaceState(null, "", `#${t}`);
     render();
   }
+});
+
+// Links para as páginas do Ghostfolio (mesmo host, porta 3333, em português).
+const GHOSTFOLIO = `${location.protocol}//${location.hostname}:3333/pt/`;
+document.querySelectorAll<HTMLAnchorElement>("[data-gf]").forEach((a) => (a.href = GHOSTFOLIO + a.dataset.gf));
+const menuBtn = document.getElementById("gf-menu")!;
+const menuList = document.getElementById("gf-menu-list")!;
+menuBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  menuList.hidden = !menuList.hidden;
+  menuBtn.setAttribute("aria-expanded", String(!menuList.hidden));
+});
+document.addEventListener("click", () => {
+  menuList.hidden = true;
+  menuBtn.setAttribute("aria-expanded", "false");
 });
 document.getElementById("account")!.addEventListener("change", (e) => {
   state.account = (e.target as HTMLSelectElement).value;

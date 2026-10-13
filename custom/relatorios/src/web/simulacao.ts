@@ -1,395 +1,536 @@
 /**
- * Aba Simulação: metas por categoria + aporte + vendas -> o que comprar/vender/realocar.
+ * Simulação dentro da aba Carteira (como a "Conta Simulação" do TradeMap) e cartão no Resumo.
  *
- * Só a intenção é salva (metas, aporte, vendas, planos por ativo); o resultado é recalculado
- * sempre com a carteira atual vinda do Ghostfolio.
+ * Salva só a intenção (metas, aporte, boletas de compra/venda, planos por ativo); o resultado é
+ * sempre recalculado com a carteira atual vinda do Ghostfolio.
  */
-import type { Chart } from "chart.js";
+import { Chart } from "chart.js";
 import type { Report } from "../shared";
-import { type AssetPlan, type SaleParam, type SimPosition, type SimResult, type SimulationParams, defaultParams, simulate } from "../sim-engine";
-import { colorOf, esc, money, openModal, parseNum, pct, qty, skeleton, toast } from "./ui";
+import {
+  type AssetPlan, type BuyParam, type CategoryAction, type Quote, type SaleParam, type SimPosition, type SimResult,
+  type SimulationParams, defaultParams, simulate,
+} from "../sim-engine";
+import { colorOf, esc, money, openModal, parseNum, pct, qty, toast } from "./ui";
 
 const ALL_CATEGORIES = ["Ações", "FIIs", "ETFs", "BDRs", "Exterior", "Tesouro Direto", "Renda Fixa", "Cripto"];
 
 let params: SimulationParams | null = null;
-let loading = false;
-const prices: Record<string, number> = {};
+let loadingParams: Promise<SimulationParams> | null = null;
+const quotes: Record<string, Quote> = {};
 let saveTimer: number | undefined;
 let savedAt: string | null = null;
 
-const positionsOf = (r: Report): SimPosition[] =>
+export const positionsOf = (r: Report): SimPosition[] =>
   r.categories.flatMap((c) => c.positions.map((p) => ({ ticker: p.ticker, category: p.category, value: p.value, price: p.price, quantity: p.quantity })));
 
-async function loadParams(r: Report) {
-  const res = await fetch("/api/simulation");
-  const saved = res.ok ? ((await res.json()) as SimulationParams | null) : null;
-  params = saved && saved.version === 1 ? { ...defaultParams(positionsOf(r)), ...saved } : defaultParams(positionsOf(r));
-  savedAt = saved?.updatedAt ?? null;
-  // Cotação dos ativos novos marcados em algum plano.
-  const extras = Object.values(params.assetPlans).flatMap((p) => p.extra ?? []);
-  await Promise.all(extras.map(fetchPrice));
+/** Carrega a simulação salva (uma vez) e as cotações dos ativos novos. */
+export function ensureParams(r: Report): Promise<SimulationParams> {
+  if (params) return Promise.resolve(params);
+  loadingParams ??= (async () => {
+    const res = await fetch("/api/simulation");
+    const saved = res.ok ? ((await res.json()) as SimulationParams | null) : null;
+    const base = defaultParams(positionsOf(r));
+    params = saved && saved.version === 1 ? { ...base, ...saved, buys: saved.buys ?? [], autoAllocate: saved.autoAllocate ?? true } : { ...base, buys: [], autoAllocate: true };
+    savedAt = saved?.updatedAt ?? null;
+    const own = new Set(positionsOf(r).map((p) => p.ticker));
+    const extras = [...Object.values(params.assetPlans).flatMap((p) => p.extra ?? []), ...(params.buys ?? []).map((b) => b.ticker)].filter((t) => !own.has(t));
+    await Promise.all([...new Set(extras)].map(fetchQuote));
+    return params;
+  })();
+  return loadingParams;
 }
 
-async function fetchPrice(ticker: string) {
-  if (prices[ticker]) return prices[ticker];
+export async function fetchQuote(ticker: string): Promise<Quote | null> {
+  if (quotes[ticker]) return quotes[ticker]!;
   const res = await fetch(`/api/quote?t=${encodeURIComponent(ticker)}`);
-  const q = res.ok ? ((await res.json()) as { price: number | null }) : null;
-  if (q?.price) prices[ticker] = q.price;
-  return q?.price ?? null;
+  const q = res.ok ? ((await res.json()) as { price: number | null; category: string | null; name: string | null }) : null;
+  if (!q?.price) return null;
+  quotes[ticker] = { price: q.price, category: q.category ?? "Outros", name: q.name };
+  return quotes[ticker]!;
 }
 
 function scheduleSave() {
   window.clearTimeout(saveTimer);
-  const el = document.getElementById("sim-saved");
-  if (el) el.textContent = "Salvando…";
+  setSaved("Salvando…");
   saveTimer = window.setTimeout(async () => {
     const res = await fetch("/api/simulation", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(params) });
-    savedAt = res.ok ? new Date().toISOString() : savedAt;
-    const e = document.getElementById("sim-saved");
-    if (e) e.textContent = res.ok ? `Salvo às ${new Date(savedAt!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "Erro ao salvar";
+    if (res.ok) savedAt = new Date().toISOString();
+    setSaved(res.ok ? savedLabel() : "Erro ao salvar");
   }, 500);
 }
+const setSaved = (t: string) => document.querySelectorAll(".sim-saved").forEach((e) => (e.textContent = t));
+const savedLabel = () => (savedAt ? `Salvo ${new Date(savedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "Não salva");
 
-const savedLabel = () => (savedAt ? `Salvo em ${new Date(savedAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}` : "Ainda não salva");
-const qtyLabel = (n: number | null, whole: boolean) => (n == null ? "" : whole ? `${Math.abs(Math.round(n))} cota${Math.abs(Math.round(n)) === 1 ? "" : "s"}` : `${qty(Math.abs(n))} cotas`);
+const isActive = (p: SimulationParams) => p.contribution > 0 || p.sales.length > 0 || (p.buys?.length ?? 0) > 0 || p.allowSells;
+const qtyLabel = (n: number | null, whole: boolean) => {
+  if (n == null || Math.abs(n) < 1e-9) return "";
+  const v = Math.abs(n);
+  return whole ? `${Math.round(v)} cota${Math.round(v) === 1 ? "" : "s"}` : `${qty(v)} cotas`;
+};
+/** Desvio total em relação às metas (metade da soma das diferenças absolutas). */
+const distance = (res: SimResult, before = false) =>
+  res.categories.reduce((s, c) => s + Math.abs((before ? c.current : c.final) / ((before ? res.totalBefore : res.totalAfter) || 1) - c.target), 0) / 2;
 
-export function renderSimulacao(r: Report, main: HTMLElement, _charts: Chart[]) {
+const STATUS: Record<CategoryAction["status"], { label: (c: CategoryAction) => string; cls: string }> = {
+  comprar: { label: (c) => `Comprar ${money(c.buy)}`, cls: "buy" },
+  vender: { label: (c) => `Vender ${money(c.sell)}`, cls: "sell" },
+  acima: { label: () => "Acima da meta · não aportar", cls: "over" },
+  "na-meta": { label: () => "Na meta", cls: "ok" },
+  "sem-meta": { label: () => "Sem meta", cls: "ok" },
+};
+
+// =====================================================================================
+// Aba Carteira em modo simulação
+// =====================================================================================
+
+let simChart: Chart | null = null;
+
+export function renderCarteiraSim(r: Report, main: HTMLElement, header: string, onReady: () => void) {
   if (!params) {
-    main.innerHTML = skeleton("simulacao");
-    if (!loading) {
-      loading = true;
-      loadParams(r)
-        .then(() => renderSimulacao(r, main, _charts))
-        .finally(() => (loading = false));
-    }
+    main.innerHTML = `${header}<div class="card"><div class="skeleton line short"></div><div class="skeleton rows"></div></div>`;
+    onReady();
+    ensureParams(r).then(() => renderCarteiraSim(r, main, header, onReady));
     return;
   }
   const p = params;
-  const positions = positionsOf(r);
-  const total = positions.reduce((s, x) => s + x.value, 0);
-  const currentPct = (c: string) => (total ? positions.filter((x) => x.category === c).reduce((s, x) => s + x.value, 0) / total : 0);
-  const shown = ALL_CATEGORIES.filter((c) => currentPct(c) > 0 || c in p.targets);
-  const hidden = ALL_CATEGORIES.filter((c) => !shown.includes(c));
-
-  main.innerHTML = `
-    <section class="card sim-hero">
-      <div class="row-between">
-        <div><h2 style="margin:0">Simulação de carteira</h2>
-          <p class="muted" style="margin:4px 0 0">Recalculada com a sua carteira de agora (${money(total)}). Nada aqui altera o Ghostfolio.</p></div>
-        <span class="muted small" id="sim-saved">${savedLabel()}</span>
+  main.innerHTML = `${header}
+    <section class="card sim-toolbar">
+      <div class="sim-controls">
+        <label class="field">Novo aporte<span class="money-input"><b>R$</b><input id="sim-contribution" inputmode="decimal" value="${p.contribution ? p.contribution.toLocaleString("pt-BR") : ""}" placeholder="0,00"/></span></label>
+        <div class="sim-switches">
+          <label class="switch"><input type="checkbox" id="sim-auto" ${p.autoAllocate !== false ? "checked" : ""}/><span></span>Distribuir o dinheiro automaticamente</label>
+          <label class="switch"><input type="checkbox" id="sim-allow-sells" ${p.allowSells ? "checked" : ""}/><span></span>Vender o que passar da meta</label>
+          <label class="switch"><input type="checkbox" id="sim-whole" ${p.wholeShares ? "checked" : ""}/><span></span>Cotas inteiras na B3</label>
+        </div>
+        <div class="sim-buttons">
+          <button class="primary" id="sim-boleta">+ Boleta</button>
+          <button class="ghost" id="sim-clear">Limpar</button>
+          <span class="muted small sim-saved">${savedLabel()}</span>
+        </div>
       </div>
+      <div id="sim-orders"></div>
     </section>
-    <section class="sim-layout">
-      <div class="sim-config">
-        <div class="card">
-          <div class="row-between"><h2 style="margin:0">Estratégia</h2><span id="sim-sum" class="small"></span></div>
-          <p class="note" style="margin:6px 0 14px">Meta de cada categoria em % do patrimônio.</p>
-          <div class="targets">${shown
-            .map(
-              (c) => `<label class="target-row"><span class="sw" style="background:${colorOf(c)}"></span><span class="t">${esc(c)}</span>
-              <span class="muted small">hoje ${pct(currentPct(c), 1)}</span>
-              <span class="pct-input"><input inputmode="decimal" data-target="${esc(c)}" value="${(p.targets[c] ?? 0).toLocaleString("pt-BR")}" aria-label="Meta de ${esc(c)}"/><b>%</b></span></label>`,
-            )
-            .join("")}</div>
-          <div class="row-between" style="margin-top:12px">
-            ${hidden.length ? `<select id="sim-add-cat"><option value="">+ Categoria…</option>${hidden.map((c) => `<option>${esc(c)}</option>`).join("")}</select>` : "<span></span>"}
-            <button class="link" id="sim-use-current">Usar alocação atual</button>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Dinheiro</h2>
-          <label class="field">Novo aporte<span class="money-input"><b>R$</b><input id="sim-contribution" inputmode="decimal" value="${p.contribution ? p.contribution.toLocaleString("pt-BR") : ""}" placeholder="0,00"/></span></label>
-          <label class="switch"><input type="checkbox" id="sim-allow-sells" ${p.allowSells ? "checked" : ""}/><span></span>Vender o que passar da meta (rebalanceamento completo)</label>
-          <label class="switch"><input type="checkbox" id="sim-whole" ${p.wholeShares ? "checked" : ""}/><span></span>Cotas inteiras para ativos da B3</label>
-        </div>
-        <div class="card">
-          <div class="row-between"><h2 style="margin:0">Vendas planejadas</h2><button class="ghost" id="sim-add-sale">+ Venda</button></div>
-          <div id="sim-sales" style="margin-top:12px"></div>
-        </div>
-      </div>
-      <div class="sim-result" id="sim-result"></div>
-    </section>`;
+    <div id="sim-body" class="sim-body"></div>`;
 
-  const update = () => {
-    const sum = shown.reduce((s, c) => s + (p.targets[c] ?? 0), 0);
-    const sumEl = document.getElementById("sim-sum")!;
-    sumEl.innerHTML = Math.abs(sum - 100) < 0.05 ? `<span class="up">Total 100%</span>` : `<span class="warn">Total ${sum.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% · ${sum < 100 ? "faltam" : "sobram"} ${Math.abs(100 - sum).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span>`;
-    renderSales(r);
-    renderResult(r, simulate(positions, p, prices));
-  };
-
-  // Metas
-  main.querySelectorAll<HTMLInputElement>("[data-target]").forEach((inp) =>
-    inp.addEventListener("input", () => {
-      p.targets[inp.dataset.target!] = Math.max(0, parseNum(inp.value) ?? 0);
-      update();
-      scheduleSave();
-    }),
-  );
-  document.getElementById("sim-add-cat")?.addEventListener("change", (e) => {
-    const c = (e.target as HTMLSelectElement).value;
-    if (!c) return;
-    p.targets[c] = p.targets[c] ?? 0; // aparece na lista; o usuário define o valor
-    scheduleSave();
-    renderSimulacao(r, main, _charts);
-  });
-  document.getElementById("sim-use-current")!.addEventListener("click", () => {
-    p.targets = defaultParams(positions).targets;
-    scheduleSave();
-    renderSimulacao(r, main, _charts);
-    toast("Metas iguais à alocação atual");
-  });
-  // Dinheiro
+  const refresh = () => renderSimBody(r);
   document.getElementById("sim-contribution")!.addEventListener("input", (e) => {
     p.contribution = Math.max(0, parseNum((e.target as HTMLInputElement).value) ?? 0);
-    update();
+    refresh();
     scheduleSave();
   });
-  for (const [id, key] of [["sim-allow-sells", "allowSells"], ["sim-whole", "wholeShares"]] as const) {
+  for (const [id, key] of [["sim-auto", "autoAllocate"], ["sim-allow-sells", "allowSells"], ["sim-whole", "wholeShares"]] as const) {
     document.getElementById(id)!.addEventListener("change", (e) => {
       p[key] = (e.target as HTMLInputElement).checked;
-      update();
+      refresh();
       scheduleSave();
     });
   }
-  document.getElementById("sim-add-sale")!.addEventListener("click", () => saleModal(r, null, update));
-  update();
+  document.getElementById("sim-boleta")!.addEventListener("click", () => boletaModal(r, { side: "buy" }, refresh));
+  document.getElementById("sim-clear")!.addEventListener("click", () => {
+    if (!confirm("Limpar aporte e boletas da simulação? As metas e os planos por ativo são mantidos.")) return;
+    p.contribution = 0;
+    p.sales = [];
+    p.buys = [];
+    p.allowSells = false;
+    scheduleSave();
+    renderCarteiraSim(r, main, header, onReady);
+    toast("Simulação limpa");
+  });
+  refresh();
+  onReady();
 }
 
-// ---------- Vendas ----------
-
-function renderSales(r: Report) {
+function renderOrders(r: Report, res: SimResult, refresh: () => void) {
   const p = params!;
-  const el = document.getElementById("sim-sales")!;
-  const res = simulate(positionsOf(r), p, prices);
-  if (!p.sales.length) {
-    el.innerHTML = `<p class="muted small" style="margin:0">Nenhuma. Use para simular vender um ou mais ativos e realocar o dinheiro.</p>`;
-    return;
-  }
-  el.innerHTML = `<div class="sale-list">${p.sales
-    .map((s, i) => {
-      const out = res.sales[i]!;
+  const el = document.getElementById("sim-orders")!;
+  const items = [
+    ...(p.buys ?? []).map((b, i) => {
+      const o = res.buys[i]!;
+      const desc = b.mode === "qty" ? `${qty(b.amount)} cotas` : money(b.amount);
+      return `<button class="order buy" data-buy="${i}"><b>C</b> ${esc(b.ticker)} <span class="muted">${desc}</span> <span>${money(o.value)}</span><span class="x" data-rm-buy="${i}" aria-label="Remover">✕</span></button>`;
+    }),
+    ...p.sales.map((s, i) => {
+      const o = res.sales[i]!;
       const desc = s.mode === "all" ? "tudo" : s.mode === "qty" ? `${qty(s.amount ?? 0)} cotas` : money(s.amount ?? 0);
-      const warn = out.status === "fora-da-carteira" ? `<span class="warn small">não está mais na carteira</span>` : out.status === "limitada" ? `<span class="warn small">limitada ao que você tem</span>` : "";
-      return `<div class="sale-item"><button class="sale-edit" data-sale="${i}"><b>${esc(s.ticker)}</b> <span class="muted small">${desc}</span> ${warn}</button>
-        <span class="v">${money(out.value)}</span><button class="icon small-x" data-remove-sale="${i}" aria-label="Remover venda">✕</button></div>`;
-    })
-    .join("")}</div><div class="row-between" style="margin-top:10px"><span class="muted small">Total das vendas</span><b>${money(res.fromSales)}</b></div>`;
-  el.querySelectorAll<HTMLButtonElement>("[data-remove-sale]").forEach((b) =>
-    b.addEventListener("click", () => {
-      p.sales.splice(Number(b.dataset.removeSale), 1);
+      const warn = o.status === "fora-da-carteira" ? " ⚠ fora da carteira" : o.status === "limitada" ? " ⚠ limitada" : "";
+      return `<button class="order sell" data-sale="${i}"><b>V</b> ${esc(s.ticker)} <span class="muted">${desc}${warn}</span> <span>${money(o.value)}</span><span class="x" data-rm-sale="${i}" aria-label="Remover">✕</span></button>`;
+    }),
+  ];
+  el.innerHTML = items.length ? `<div class="orders"><span class="muted small">Boletas</span>${items.join("")}</div>` : "";
+  el.querySelectorAll<HTMLElement>("[data-rm-buy]").forEach((x) =>
+    x.addEventListener("click", (e) => {
+      e.stopPropagation();
+      p.buys!.splice(Number(x.dataset.rmBuy), 1);
       scheduleSave();
-      document.getElementById("sim-contribution")!.dispatchEvent(new Event("input"));
+      refresh();
     }),
   );
-  el.querySelectorAll<HTMLButtonElement>("[data-sale]").forEach((b) =>
-    b.addEventListener("click", () => saleModal(r, Number(b.dataset.sale), () => document.getElementById("sim-contribution")!.dispatchEvent(new Event("input")))),
+  el.querySelectorAll<HTMLElement>("[data-rm-sale]").forEach((x) =>
+    x.addEventListener("click", (e) => {
+      e.stopPropagation();
+      p.sales.splice(Number(x.dataset.rmSale), 1);
+      scheduleSave();
+      refresh();
+    }),
+  );
+  el.querySelectorAll<HTMLElement>("[data-buy]").forEach((x) => x.addEventListener("click", () => boletaModal(r, { side: "buy", index: Number(x.dataset.buy) }, refresh)));
+  el.querySelectorAll<HTMLElement>("[data-sale]").forEach((x) => x.addEventListener("click", () => boletaModal(r, { side: "sell", index: Number(x.dataset.sale) }, refresh)));
+}
+
+const openCats = new Set<string>();
+let openCatsInit = false;
+
+function renderSimBody(r: Report) {
+  const p = params!;
+  const body = document.getElementById("sim-body");
+  if (!body) return;
+  const positions = positionsOf(r);
+  const res = simulate(positions, p, quotes);
+  const refresh = () => renderSimBody(r);
+  renderOrders(r, res, refresh);
+  // Na primeira visita, abre as categorias que têm algo a fazer.
+  if (!openCatsInit) {
+    openCatsInit = true;
+    for (const c of res.categories) if (c.buy > 0.5 || c.sell > 0.5) openCats.add(c.name);
+  }
+
+  const total = res.totalBefore;
+  const currentPct = (c: string) => (total ? positions.filter((x) => x.category === c).reduce((s, x) => s + x.value, 0) / total : 0);
+  const shown = ALL_CATEGORIES.filter((c) => currentPct(c) > 0 || c in p.targets || res.categories.some((x) => x.name === c && x.final > 0));
+  const hidden = ALL_CATEGORIES.filter((c) => !shown.includes(c));
+  const sum = shown.reduce((s, c) => s + (p.targets[c] ?? 0), 0);
+  const cat = (c: string) => res.categories.find((x) => x.name === c);
+  const toDistribute = res.available + res.fromRebalanceSells;
+
+  body.innerHTML = `
+    <section class="kpis">
+      <div class="card kpi"><div class="label">Para investir</div><div class="value">${money(toDistribute)}</div><div class="sub">aporte ${money(res.contribution)}${res.fromSales ? ` + vendas ${money(res.fromSales)}` : ""}${res.fromRebalanceSells ? ` + excedente ${money(res.fromRebalanceSells)}` : ""}</div></div>
+      <div class="card kpi"><div class="label">Boletas de compra</div><div class="value">${money(res.manualBuys)}</div><div class="sub">${res.deficit > 0.005 ? `<span class="down">faltam ${money(res.deficit)}</span>` : p.autoAllocate === false ? `${money(res.leftover)} fica em caixa` : `resto distribuído automaticamente`}</div></div>
+      <div class="card kpi"><div class="label">Patrimônio depois</div><div class="value">${money(res.totalAfter)}</div><div class="sub">hoje ${money(res.totalBefore)}${res.leftover > 0.005 && p.autoAllocate !== false ? ` · sobra ${money(res.leftover)}` : ""}</div></div>
+      <div class="card kpi"><div class="label">Distância da meta</div><div class="value">${pct(distance(res, true), 1)} → ${pct(distance(res), 1)}</div><div class="sub">hoje → depois da simulação</div></div>
+    </section>
+    <section class="split-1-2">
+      <div class="card"><div class="row-between"><h2 style="margin:0">Depois da simulação</h2><span class="muted small">${money(res.totalAfter)}</span></div><div class="chart-box donut"><canvas id="sim-donut"></canvas></div></div>
+      <div class="card">
+        <div class="row-between"><h2 style="margin:0">Estratégia</h2><span class="small ${Math.abs(sum - 100) < 0.05 ? "up" : "warn"}">${Math.abs(sum - 100) < 0.05 ? "Metas somam 100%" : `Metas somam ${sum.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`}</span></div>
+        <div class="strategy">
+          <div class="strategy-head muted small"><span></span><span>Categoria</span><span>Hoje</span><span>Depois</span><span>Meta</span><span></span></div>
+          ${shown
+            .map((c) => {
+              const a = cat(c);
+              const st = a ? STATUS[a.status] : null;
+              return `<div class="strategy-row"><span class="sw" style="background:${colorOf(c)}"></span><span class="t">${esc(c)}</span>
+                <span class="num">${pct(currentPct(c), 1)}</span><span class="num"><b>${a ? pct(a.final / (res.totalAfter || 1), 1) : "—"}</b></span>
+                <span class="pct-input"><input inputmode="decimal" data-target="${esc(c)}" value="${(p.targets[c] ?? 0).toLocaleString("pt-BR")}" aria-label="Meta de ${esc(c)}"/><b>%</b></span>
+                <span>${st && a ? `<span class="badge ${st.cls}">${st.label(a)}</span>` : ""}</span></div>`;
+            })
+            .join("")}
+        </div>
+        <div class="row-between" style="margin-top:12px">
+          ${hidden.length ? `<select id="sim-add-cat"><option value="">+ Categoria…</option>${hidden.map((c) => `<option>${esc(c)}</option>`).join("")}</select>` : "<span></span>"}
+          <button class="link" id="sim-use-current">Metas = alocação atual</button>
+        </div>
+      </div>
+    </section>
+    ${res.categories
+      .filter((c) => c.current > 0 || c.final > 0 || c.target > 0)
+      .map((c) => categoryBlock(r, c, res))
+      .join("")}`;
+
+  // Donut "depois".
+  simChart?.destroy();
+  const cats = res.categories.filter((c) => c.final > 0.005);
+  simChart = new Chart(document.getElementById("sim-donut") as HTMLCanvasElement, {
+    type: "doughnut",
+    data: { labels: cats.map((c) => c.name), datasets: [{ data: cats.map((c) => c.final), backgroundColor: cats.map((c) => colorOf(c.name)), borderColor: "#1d1d1d", borderWidth: 2 }] },
+    options: {
+      cutout: "68%",
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (x) => ` ${x.label}: ${money(x.parsed)} (${pct(x.parsed / (res.totalAfter || 1), 1)} · meta ${pct(cats[x.dataIndex]!.target, 1)})` } } },
+    },
+  });
+
+  // Metas (confirma ao sair do campo / Enter para não perder o foco a cada tecla).
+  body.querySelectorAll<HTMLInputElement>("[data-target]").forEach((inp) =>
+    inp.addEventListener("change", () => {
+      p.targets[inp.dataset.target!] = Math.max(0, parseNum(inp.value) ?? 0);
+      scheduleSave();
+      refresh();
+    }),
+  );
+  body.querySelector("#sim-add-cat")?.addEventListener("change", (e) => {
+    const c = (e.target as HTMLSelectElement).value;
+    if (!c) return;
+    p.targets[c] = p.targets[c] ?? 0;
+    scheduleSave();
+    refresh();
+  });
+  body.querySelector("#sim-use-current")!.addEventListener("click", () => {
+    p.targets = defaultParams(positions).targets;
+    scheduleSave();
+    refresh();
+    toast("Metas iguais à alocação atual");
+  });
+
+  // Blocos por categoria.
+  body.querySelectorAll<HTMLDetailsElement>("details.cat").forEach((d) => d.addEventListener("toggle", () => (d.open ? openCats.add(d.dataset.cat!) : openCats.delete(d.dataset.cat!))));
+  body.querySelectorAll<HTMLButtonElement>("[data-pmode]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const c = b.dataset.cat!;
+      const plan: AssetPlan = { ...(p.assetPlans[c] ?? { mode: "proportional" }), mode: b.dataset.pmode as AssetPlan["mode"] };
+      if (plan.mode === "custom" && !plan.weights) plan.weights = currentWeights(r, c);
+      p.assetPlans[c] = plan;
+      scheduleSave();
+      refresh();
+    }),
+  );
+  body.querySelectorAll<HTMLInputElement>("[data-w]").forEach((inp) =>
+    inp.addEventListener("change", () => {
+      const c = inp.dataset.cat!;
+      const plan = (p.assetPlans[c] ??= { mode: "custom" });
+      plan.weights = { ...(plan.weights ?? {}), [inp.dataset.w!]: Math.max(0, parseNum(inp.value) ?? 0) };
+      scheduleSave();
+      refresh();
+    }),
+  );
+  body.querySelectorAll<HTMLButtonElement>("[data-trade]").forEach((b) =>
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      boletaModal(r, { side: b.dataset.trade as "buy" | "sell", ticker: b.dataset.ticker }, refresh);
+    }),
+  );
+  body.querySelectorAll<HTMLButtonElement>("[data-add-asset]").forEach((b) => b.addEventListener("click", () => addAssetModal(r, b.dataset.addAsset!, refresh)));
+  body.querySelectorAll<HTMLButtonElement>("[data-rm-extra]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const plan = p.assetPlans[b.dataset.cat!];
+      if (plan) plan.extra = (plan.extra ?? []).filter((t) => t !== b.dataset.rmExtra);
+      scheduleSave();
+      refresh();
+    }),
   );
 }
 
-function saleModal(r: Report, index: number | null, onDone: () => void) {
+function currentWeights(r: Report, category: string) {
+  const own = r.categories.find((c) => c.name === category)?.positions ?? [];
+  const tot = own.reduce((s, x) => s + x.value, 0);
+  return Object.fromEntries(own.map((x) => [x.ticker, Math.round((tot ? x.value / tot : 0) * 1000) / 10]));
+}
+
+function categoryBlock(r: Report, c: CategoryAction, res: SimResult) {
   const p = params!;
-  const editing = index != null ? p.sales[index]! : null;
-  const groups = r.categories.map(
-    (c) => `<optgroup label="${esc(c.name)}">${c.positions.map((x) => `<option value="${esc(x.ticker)}" ${editing?.ticker === x.ticker ? "selected" : ""}>${esc(x.ticker)} · ${money(x.value)}</option>`).join("")}</optgroup>`,
-  );
+  const plan = p.assetPlans[c.name] ?? { mode: "proportional" };
+  const st = STATUS[c.status];
+  const own = r.categories.find((x) => x.name === c.name)?.positions ?? [];
+  const action = new Map(c.assets.map((a) => [a.ticker, a]));
+  const soldAll = new Set(p.sales.filter((s) => s.mode === "all").map((s) => s.ticker));
+  // Linhas: posições atuais + ativos novos (boletas ou plano).
+  const newOnes = [...new Set([...c.assets.filter((a) => a.isNew).map((a) => a.ticker), ...(plan.extra ?? [])])].filter((t) => !own.some((x) => x.ticker === t));
+  const catAfterTotal = c.final || 1;
+  const rows = [
+    ...own.map((x) => ({ ticker: x.ticker, sub: x.subcategory, quantity: x.quantity, price: x.price, value: x.value, isNew: false })),
+    ...newOnes.map((t) => ({ ticker: t, sub: "novo", quantity: 0, price: quotes[t]?.price ?? 0, value: 0, isNew: true })),
+  ];
+  const tr = rows
+    .map((x) => {
+      const a = action.get(x.ticker);
+      const move = a ? a.buy - a.sell : 0;
+      const after = x.value + move;
+      const sold = soldAll.has(x.ticker);
+      const sim = a && Math.abs(move) > 0.005
+        ? `<span class="${move > 0 ? "up" : "down"}">${move > 0 ? "+" : "−"} ${money(Math.abs(move))}</span><div class="small muted">${move > 0 ? "+" : "−"}${qtyLabel(a.quantity, a.whole)}${a.manual > 0.005 ? " · boleta" : ""}</div>`
+        : `<span class="muted">—</span>`;
+      return `<tr class="${x.isNew ? "is-new" : ""} ${sold ? "is-sold" : ""}">
+        <td><div class="tk">${esc(x.ticker)}${x.isNew ? ` <span class="badge new">novo</span>` : ""}${sold ? ` <span class="badge sell">venda total</span>` : ""}</div><div class="nm">${esc(x.sub)}</div></td>
+        <td>${qty(x.quantity)}</td><td>${x.price ? money(x.price) : "—"}</td><td>${money(x.value)}</td>
+        <td>${sim}</td><td><b>${money(after)}</b></td>
+        <td>${pct(c.current ? x.value / c.current : 0, 1)} → <b>${pct(after / catAfterTotal, 1)}</b></td>
+        ${plan.mode === "custom" ? `<td><span class="pct-input slim"><input inputmode="decimal" data-cat="${esc(c.name)}" data-w="${esc(x.ticker)}" value="${(plan.weights?.[x.ticker] ?? 0).toLocaleString("pt-BR")}"/><b>%</b></span></td>` : ""}
+        <td class="trade"><button class="mini buy" data-trade="buy" data-ticker="${esc(x.ticker)}" title="Comprar">C</button>${x.isNew ? `<button class="mini" data-rm-extra="${esc(x.ticker)}" data-cat="${esc(c.name)}" title="Remover">✕</button>` : `<button class="mini sell" data-trade="sell" data-ticker="${esc(x.ticker)}" title="Vender">V</button>`}</td></tr>`;
+    })
+    .join("");
+  const open = openCats.has(c.name);
+  return `<details class="cat sim-cat ${st.cls}" data-cat="${esc(c.name)}" ${open ? "open" : ""}>
+    <summary><span class="ring" style="border:3px solid ${colorOf(c.name)}">${pct(c.final / (res.totalAfter || 1), 0)}</span>
+      <span><div class="t">${esc(c.name)}</div><div class="muted small">hoje ${money(c.current)} → depois ${money(c.final)} · meta ${money(c.targetValue)} (${pct(c.target, 1)})</div></span>
+      <span class="badge ${st.cls}">${st.label(c)}</span><span class="chev">›</span></summary>
+    <div class="body">
+      ${c.needsAssets ? `<p class="warn small">Esta categoria deveria receber ${money(c.buy)}, mas não tem ativos. Adicione um ativo abaixo.</p>` : ""}
+      <div class="row-between plan-bar">
+        <div class="toggle">${(["proportional", "equal", "custom"] as const)
+          .map((mo) => `<button data-cat="${esc(c.name)}" data-pmode="${mo}" aria-pressed="${plan.mode === mo}">${{ proportional: "Proporcional", equal: "Partes iguais", custom: "Pesos próprios" }[mo]}</button>`)
+          .join("")}</div>
+        <button class="ghost" data-add-asset="${esc(c.name)}">+ Ativo novo</button>
+      </div>
+      <div class="scroll"><table class="sim-table"><thead><tr><th>Ativo</th><th>Qtde</th><th>Preço</th><th>Valor hoje</th><th>Simulação</th><th>Depois</th><th>% da classe</th>${plan.mode === "custom" ? "<th>Peso alvo</th>" : ""}<th></th></tr></thead><tbody>${tr}</tbody></table></div>
+    </div></details>`;
+}
+
+// =====================================================================================
+// Boleta (compra/venda simulada) e ativo novo
+// =====================================================================================
+
+function boletaModal(r: Report, opts: { side: "buy" | "sell"; index?: number; ticker?: string }, onDone: () => void) {
+  const p = params!;
+  const own = r.categories.flatMap((c) => c.positions);
+  let side = opts.side;
+  const editingBuy = side === "buy" && opts.index != null ? p.buys![opts.index]! : null;
+  const editingSale = side === "sell" && opts.index != null ? p.sales[opts.index]! : null;
+  let mode: string = editingBuy?.mode ?? editingSale?.mode ?? (side === "buy" ? "qty" : "all");
+  const initialTicker = editingBuy?.ticker ?? editingSale?.ticker ?? opts.ticker ?? "";
+  const initialAmount = editingBuy?.amount ?? editingSale?.amount;
   const m = openModal(
-    editing ? `Editar venda de ${editing.ticker}` : "Simular venda",
-    `<label class="field">Ativo<select id="sale-ticker">${groups.join("")}</select></label>
-     <div class="toggle" id="sale-mode" style="margin:14px 0">${(["all", "qty", "value"] as const)
-       .map((mo) => `<button data-mode="${mo}" aria-pressed="${(editing?.mode ?? "all") === mo}">${{ all: "Vender tudo", qty: "Quantidade", value: "Valor (R$)" }[mo]}</button>`)
-       .join("")}</div>
-     <label class="field" id="sale-amount-wrap">Quantidade<input id="sale-amount" inputmode="decimal" value="${editing?.amount != null ? editing.amount.toLocaleString("pt-BR") : ""}"/></label>
-     <p class="note" id="sale-preview"></p>
-     <div class="row-between" style="margin-top:16px"><span></span><button class="primary" id="sale-ok">${editing ? "Salvar" : "Adicionar venda"}</button></div>`,
+    opts.index != null ? "Editar boleta" : "Boleta simulada",
+    `<div class="toggle side-toggle" style="margin-bottom:14px"><button data-side="buy" aria-pressed="${side === "buy"}">Comprar</button><button data-side="sell" aria-pressed="${side === "sell"}">Vender</button></div>
+     <label class="field">Ativo<input id="b-ticker" list="b-tickers" value="${esc(initialTicker)}" placeholder="Ex.: ITSA4, HGLG11" autocapitalize="characters"/></label>
+     <datalist id="b-tickers">${own.map((x) => `<option value="${esc(x.ticker)}">${esc(x.category)} · ${money(x.value)}</option>`).join("")}</datalist>
+     <div class="toggle" id="b-modes" style="margin:14px 0"></div>
+     <label class="field" id="b-amount-wrap"><span id="b-amount-label">Quantidade</span><input id="b-amount" inputmode="decimal" value="${initialAmount != null ? initialAmount.toLocaleString("pt-BR") : ""}"/></label>
+     <p class="note" id="b-preview"></p>
+     <div class="row-between" style="margin-top:16px"><span></span><button class="primary" id="b-ok">${opts.index != null ? "Salvar" : "Adicionar à simulação"}</button></div>`,
   );
-  let mode: SaleParam["mode"] = editing?.mode ?? "all";
-  const sel = m.el.querySelector("#sale-ticker") as HTMLSelectElement;
-  const amount = m.el.querySelector("#sale-amount") as HTMLInputElement;
-  const wrap = m.el.querySelector("#sale-amount-wrap") as HTMLElement;
-  const preview = () => {
-    const pos = r.categories.flatMap((c) => c.positions).find((x) => x.ticker === sel.value)!;
-    wrap.style.display = mode === "all" ? "none" : "";
-    wrap.firstChild!.textContent = mode === "qty" ? "Quantidade" : "Valor em R$";
-    const a = parseNum(amount.value) ?? 0;
-    const value = mode === "all" ? pos.value : mode === "qty" ? Math.min(a, pos.quantity) * pos.price : Math.min(a, pos.value);
-    (m.el.querySelector("#sale-preview") as HTMLElement).innerHTML = `Você tem ${qty(pos.quantity)} cotas (${money(pos.value)}) a ${money(pos.price)}. Esta venda gera <b>${money(value)}</b>.`;
+  const $ = <T extends HTMLElement>(s: string) => m.el.querySelector(s) as T;
+  const tickerEl = $<HTMLInputElement>("#b-ticker");
+  const amountEl = $<HTMLInputElement>("#b-amount");
+
+  const drawModes = () => {
+    const modes = side === "buy" ? [["qty", "Quantidade"], ["value", "Valor (R$)"]] : [["all", "Vender tudo"], ["qty", "Quantidade"], ["value", "Valor (R$)"]];
+    if (!modes.some(([k]) => k === mode)) mode = modes[0]![0]!;
+    $("#b-modes").innerHTML = modes.map(([k, l]) => `<button data-mode="${k}" aria-pressed="${mode === k}">${l}</button>`).join("");
+    $("#b-modes").querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
+      b.addEventListener("click", () => {
+        mode = b.dataset.mode!;
+        drawModes();
+        preview();
+      }),
+    );
   };
-  m.el.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
+  const preview = async () => {
+    const t = tickerEl.value.trim().toUpperCase();
+    const pos = own.find((x) => x.ticker === t);
+    $("#b-amount-wrap").style.display = mode === "all" ? "none" : "";
+    $("#b-amount-label").textContent = mode === "qty" ? "Quantidade de cotas" : "Valor em R$";
+    const out = $("#b-preview");
+    if (!t) return void (out.textContent = "");
+    if (side === "sell" && !pos) return void (out.innerHTML = `<span class="warn">Você não tem ${esc(t)} na carteira.</span>`);
+    const q = pos ? null : await fetchQuote(t);
+    const price = pos?.price ?? q?.price ?? null;
+    if (!price) return void (out.innerHTML = `<span class="warn">Não encontrei cotação para ${esc(t)}.</span>`);
+    const a = parseNum(amountEl.value) ?? 0;
+    const category = pos?.category ?? q?.category ?? "Outros";
+    let n = mode === "all" ? pos!.quantity : mode === "qty" ? a : a / price;
+    if (side === "sell" && pos) n = Math.min(n, pos.quantity);
+    out.innerHTML = `${esc(t)} · ${esc(category)} · ${money(price)}${pos ? ` · você tem ${qty(pos.quantity)} cotas` : ` · <span class="badge new">novo na carteira</span>`}<br>${side === "buy" ? "Compra" : "Venda"} de <b>${qty(n)} cotas ≈ ${money(n * price)}</b>`;
+  };
+  m.el.querySelectorAll<HTMLButtonElement>("[data-side]").forEach((b) =>
     b.addEventListener("click", () => {
-      mode = b.dataset.mode as SaleParam["mode"];
-      m.el.querySelectorAll("[data-mode]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      side = b.dataset.side as "buy" | "sell";
+      m.el.querySelectorAll("[data-side]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      drawModes();
       preview();
     }),
   );
-  sel.addEventListener("change", preview);
-  amount.addEventListener("input", preview);
+  tickerEl.addEventListener("change", preview);
+  amountEl.addEventListener("input", preview);
+  drawModes();
   preview();
-  m.el.querySelector("#sale-ok")!.addEventListener("click", () => {
-    const sale: SaleParam = { ticker: sel.value, mode, amount: mode === "all" ? undefined : (parseNum(amount.value) ?? 0) };
-    if (mode !== "all" && !sale.amount) return amount.focus();
-    if (index != null) p.sales[index] = sale;
-    else p.sales.push(sale);
+
+  $("#b-ok").addEventListener("click", async () => {
+    const t = tickerEl.value.trim().toUpperCase();
+    if (!t) return tickerEl.focus();
+    const a = parseNum(amountEl.value);
+    if (mode !== "all" && !a) return amountEl.focus();
+    if (side === "sell" && !own.some((x) => x.ticker === t)) return void preview();
+    if (side === "buy" && !own.some((x) => x.ticker === t) && !(await fetchQuote(t))) return void preview();
+    // Na edição, remove a ordem anterior (inclusive se trocou de compra para venda).
+    if (editingBuy) p.buys!.splice(opts.index!, 1);
+    if (editingSale) p.sales.splice(opts.index!, 1);
+    if (side === "buy") (p.buys ??= []).push({ ticker: t, mode: mode as BuyParam["mode"], amount: a! });
+    else p.sales.push({ ticker: t, mode: mode as SaleParam["mode"], amount: mode === "all" ? undefined : a! });
     scheduleSave();
     m.close();
     onDone();
   });
 }
 
-// ---------- Resultado ----------
-
-const STATUS: Record<string, { label: (c: SimResult["categories"][number]) => string; cls: string }> = {
-  comprar: { label: (c) => `Comprar ${money(c.buy)}`, cls: "buy" },
-  vender: { label: (c) => `Vender ${money(c.sell)}`, cls: "sell" },
-  acima: { label: (c) => `Acima da meta · não aportar`, cls: "over" },
-  "na-meta": { label: () => "Na meta", cls: "ok" },
-  "sem-meta": { label: () => "Sem meta definida", cls: "ok" },
-};
-
-function renderResult(r: Report, res: SimResult) {
-  const el = document.getElementById("sim-result")!;
-  const maxPct = Math.max(...res.categories.flatMap((c) => [c.current / (res.totalBefore || 1), c.final / (res.totalAfter || 1), c.target]), 0.01);
-  const bar = (v: number, color: string, cls = "") => `<div class="cmp-bar ${cls}"><div style="width:${(v / maxPct) * 100}%;background:${color}"></div></div>`;
-  const nothing = res.available < 0.01 && res.fromRebalanceSells < 0.01;
-
-  el.innerHTML = `
-    <div class="kpis sim-kpis">
-      <div class="card kpi"><div class="label">Para distribuir</div><div class="value">${money(res.available + res.fromRebalanceSells)}</div><div class="sub">aporte ${money(res.contribution)}${res.fromSales ? ` + vendas ${money(res.fromSales)}` : ""}${res.fromRebalanceSells ? ` + excedente ${money(res.fromRebalanceSells)}` : ""}</div></div>
-      <div class="card kpi"><div class="label">Patrimônio depois</div><div class="value">${money(res.totalAfter)}</div><div class="sub">hoje ${money(res.totalBefore)}</div></div>
-      <div class="card kpi"><div class="label">Sobra (arredondamento)</div><div class="value">${money(res.leftover)}</div><div class="sub">não alocado</div></div>
-      <div class="card kpi"><div class="label">Distância da meta</div><div class="value">${pct(distance(res), 1)}</div><div class="sub">depois · hoje ${pct(distance(res, true), 1)}</div></div>
-    </div>
-    <div class="card">
-      <div class="row-between"><h2 style="margin:0">Antes, depois e meta</h2>
-        <div class="cmp-legend small"><span><i class="now"></i>Hoje</span><span><i class="after"></i>Depois</span><span><i class="goal"></i>Meta</span></div></div>
-      <div class="cmp">${res.categories
-        .map(
-          (c) => `<div class="cmp-row"><span class="t"><span class="sw" style="background:${colorOf(c.name)}"></span>${esc(c.name)}</span>
-          <div class="cmp-bars">${bar(c.current / (res.totalBefore || 1), "rgba(255,255,255,0.28)")}${bar(c.final / (res.totalAfter || 1), colorOf(c.name))}<div class="cmp-goal" style="left:${(c.target / maxPct) * 100}%"></div></div>
-          <span class="v small">${pct(c.current / (res.totalBefore || 1), 1)} → <b>${pct(c.final / (res.totalAfter || 1), 1)}</b><br><span class="muted">meta ${pct(c.target, 1)}</span></span></div>`,
-        )
-        .join("")}</div>
-    </div>
-    <h2 class="section-title">O que fazer</h2>
-    ${nothing ? `<div class="card"><p class="muted" style="margin:0">Informe um aporte, marque vendas ou ligue o rebalanceamento completo para ver as ações sugeridas.</p></div>` : ""}
-    <div class="actions">${res.categories
-      .filter((c) => !nothing || c.status === "acima")
-      .sort((a, b) => b.buy + b.sell - (a.buy + a.sell))
-      .map((c) => {
-        const st = STATUS[c.status]!;
-        return `<div class="card action ${st.cls}">
-          <div class="row-between"><div class="t"><span class="sw" style="background:${colorOf(c.name)}"></span>${esc(c.name)}</div><span class="badge ${st.cls}">${st.label(c)}</span></div>
-          <p class="muted small" style="margin:6px 0 0">Meta ${money(c.targetValue)} · hoje ${money(c.current)}${c.status === "acima" ? ` · ${money(c.excess)} acima` : ""}</p>
-          ${c.needsAssets ? `<p class="warn small">Nenhum ativo nesta categoria ainda. Escolha onde investir em “Ativos”.</p>` : ""}
-          ${c.assets.length ? assetList(c.assets) : ""}
-          ${c.target > 0 && c.status !== "acima" ? `<button class="link small plan-btn" data-plan="${esc(c.name)}">Ativos: ${planLabel(params!.assetPlans[c.name])} ›</button>` : ""}
-        </div>`;
-      })
-      .join("")}</div>`;
-  el.querySelectorAll<HTMLButtonElement>("[data-plan]").forEach((b) => b.addEventListener("click", () => planModal(r, b.dataset.plan!)));
-}
-
-const assetRow = (a: SimResult["categories"][number]["assets"][number]) =>
-  `<div class="aa"><span><b>${esc(a.ticker)}</b>${a.isNew ? ` <span class="badge new">novo</span>` : ""}</span>
-   <span class="muted small">${a.price ? `${qtyLabel(a.quantity, a.whole)} × ${money(a.price)}` : "sem cotação"}</span>
-   <span class="${a.sell > 0 ? "down" : "up"}">${a.sell > 0 ? `− ${money(a.sell)}` : `+ ${money(a.buy)}`}</span></div>`;
-
-/** Mostra os 6 maiores movimentos; o resto fica num "ver mais". */
-function assetList(assets: SimResult["categories"][number]["assets"]) {
-  const top = assets.slice(0, 6).map(assetRow).join("");
-  const rest = assets.slice(6);
-  return `<div class="asset-actions">${top}${rest.length ? `<details class="more"><summary>ver mais ${rest.length} ativo${rest.length > 1 ? "s" : ""}</summary>${rest.map(assetRow).join("")}</details>` : ""}</div>`;
-}
-
-/** Desvio total em relação às metas (metade da soma das diferenças absolutas). */
-function distance(res: SimResult, before = false) {
-  const t = before ? res.totalBefore : res.totalAfter;
-  return res.categories.reduce((s, c) => s + Math.abs((before ? c.current : c.final) / (t || 1) - c.target), 0) / 2;
-}
-
-const planLabel = (p?: AssetPlan) => (!p || p.mode === "proportional" ? "proporcional à posição" : p.mode === "equal" ? "partes iguais" : "pesos personalizados");
-
-// ---------- Plano por ativo ----------
-
-function planModal(r: Report, category: string) {
+function addAssetModal(r: Report, category: string, onDone: () => void) {
   const p = params!;
-  const plan: AssetPlan = structuredClone(p.assetPlans[category] ?? { mode: "proportional" });
-  // Ativos com venda total planejada não recebem aporte.
-  const soldAll = new Set(p.sales.filter((s) => s.mode === "all").map((s) => s.ticker));
-  const own = (r.categories.find((c) => c.name === category)?.positions ?? []).filter((x) => !soldAll.has(x.ticker));
-  const m = openModal(`Ativos de ${category}`, `<div id="plan-body"></div>`, { wide: true });
-  const body = m.el.querySelector("#plan-body") as HTMLElement;
+  const m = openModal(
+    `Ativo novo em ${category}`,
+    `<p class="muted" style="margin-top:0">O ativo passa a receber parte do aporte desta categoria. Ajuste o peso dele em “Pesos próprios”.</p>
+     <label class="field">Código<input id="n-ticker" placeholder="Ex.: HGLG11" autocapitalize="characters"/></label>
+     <p class="note" id="n-msg"></p>
+     <div class="row-between" style="margin-top:16px"><span></span><button class="primary" id="n-ok">Adicionar</button></div>`,
+  );
+  const inp = m.el.querySelector("#n-ticker") as HTMLInputElement;
+  const msg = m.el.querySelector("#n-msg") as HTMLElement;
+  m.el.querySelector("#n-ok")!.addEventListener("click", async () => {
+    const t = inp.value.trim().toUpperCase();
+    if (!/^[A-Z0-9.^-]{2,15}$/.test(t)) return inp.focus();
+    if (r.categories.some((c) => c.positions.some((x) => x.ticker === t))) {
+      msg.innerHTML = `<span class="warn">${esc(t)} já está na carteira.</span>`;
+      return;
+    }
+    const q = await fetchQuote(t);
+    if (!q) {
+      msg.innerHTML = `<span class="warn">Não encontrei cotação para ${esc(t)}.</span>`;
+      return;
+    }
+    const plan: AssetPlan = p.assetPlans[category] ?? { mode: "proportional" };
+    plan.extra = [...new Set([...(plan.extra ?? []), t])];
+    if (plan.mode !== "custom") {
+      plan.mode = "custom";
+      plan.weights = currentWeights(r, category);
+    }
+    plan.weights = { ...(plan.weights ?? {}), [t]: plan.weights?.[t] ?? 10 };
+    p.assetPlans[category] = plan;
+    openCats.add(category);
+    scheduleSave();
+    m.close();
+    onDone();
+    if (q.category && q.category !== category) toast(`${t} parece ser ${q.category}, mas foi incluído em ${category}`);
+  });
+}
 
-  const draw = () => {
-    const members = [...own.map((x) => ({ ticker: x.ticker, value: x.value, isNew: false })), ...(plan.extra ?? []).map((t) => ({ ticker: t, value: 0, isNew: true }))];
-    const sum = members.reduce((s, x) => s + (plan.weights?.[x.ticker] ?? 0), 0);
-    body.innerHTML = `
-      <p class="muted" style="margin-top:0">Como dividir o dinheiro desta categoria entre os ativos. O simulador prioriza os ativos mais abaixo do peso desejado.</p>
-      <div class="toggle" style="margin-bottom:14px">${(["proportional", "equal", "custom"] as const)
-        .map((mo) => `<button data-pmode="${mo}" aria-pressed="${plan.mode === mo}">${{ proportional: "Proporcional à posição", equal: "Partes iguais", custom: "Personalizado" }[mo]}</button>`)
-        .join("")}</div>
-      <div class="plan-list">${members
+// =====================================================================================
+// Cartão no Resumo
+// =====================================================================================
+
+export async function mountSimSummary(el: HTMLElement, r: Report, openSim: () => void) {
+  const p = await ensureParams(r);
+  if (!document.body.contains(el)) return;
+  if (!isActive(p)) {
+    el.innerHTML = `<div class="card sim-cta"><div><h2 style="margin:0">Simulação</h2><p class="muted" style="margin:4px 0 0">Simule um aporte ou vendas e veja o que comprar para chegar nas suas metas.</p></div><button class="ghost" id="sim-open">Simular na Carteira ›</button></div>`;
+    el.querySelector("#sim-open")!.addEventListener("click", openSim);
+    return;
+  }
+  const res = simulate(positionsOf(r), p, quotes);
+  // Vendas planejadas (boletas) + compras/vendas calculadas, das maiores para as menores.
+  const planned = res.sales
+    .filter((x) => x.value > 0.5)
+    .map((x) => ({ ticker: x.ticker, category: x.category ?? "Outros", buy: 0, sell: x.value, quantity: -x.quantity, whole: true, isNew: false }));
+  const moves = [
+    ...planned,
+    ...res.categories.flatMap((c) => c.assets.map((a) => ({ ticker: a.ticker, category: c.name, buy: a.buy, sell: a.sell, quantity: a.quantity, whole: a.whole, isNew: a.isNew }))),
+  ]
+    .filter((a) => a.buy > 0.5 || a.sell > 0.5)
+    .sort((a, b) => b.buy + b.sell - (a.buy + a.sell));
+  const top = moves.slice(0, 8);
+  el.innerHTML = `<div class="card sim-summary">
+    <div class="row-between"><div><h2 style="margin:0">Simulação salva</h2><p class="muted small" style="margin:4px 0 0">${savedLabel()} · recalculada com a carteira de agora</p></div><button class="ghost" id="sim-open">Abrir na Carteira ›</button></div>
+    <div class="sim-summary-grid">
+      <div class="stats two">
+        <div class="stat"><div class="l">Para investir</div><div class="v">${money(res.available + res.fromRebalanceSells)}</div></div>
+        <div class="stat"><div class="l">Compras</div><div class="v up">${money(res.categories.reduce((s, c) => s + c.buy, 0))}</div></div>
+        <div class="stat"><div class="l">Vendas</div><div class="v down">${money(res.fromSales + res.fromRebalanceSells)}</div></div>
+        <div class="stat"><div class="l">Distância da meta</div><div class="v">${pct(distance(res, true), 1)} → ${pct(distance(res), 1)}</div></div>
+      </div>
+      <div><h3 style="margin-top:0">O que fazer</h3><div class="asset-actions">${top
         .map(
-          (x) => `<div class="plan-row"><span><b>${esc(x.ticker)}</b>${x.isNew ? ` <span class="badge new">novo${prices[x.ticker] ? ` · ${money(prices[x.ticker]!)}` : ""}</span>` : ` <span class="muted small">${money(x.value)}</span>`}</span>
-          ${plan.mode === "custom" ? `<span class="pct-input"><input inputmode="decimal" data-w="${esc(x.ticker)}" value="${(plan.weights?.[x.ticker] ?? 0).toLocaleString("pt-BR")}"/><b>%</b></span>` : "<span></span>"}
-          ${x.isNew ? `<button class="icon small-x" data-rm="${esc(x.ticker)}" aria-label="Remover">✕</button>` : "<span></span>"}</div>`,
+          (a) => `<div class="aa"><span><span class="sw" style="background:${colorOf(a.category)}"></span> <b>${esc(a.ticker)}</b>${a.isNew ? ` <span class="badge new">novo</span>` : ""}</span>
+          <span class="muted small">${qtyLabel(a.quantity, a.whole)}</span><span class="${a.sell > 0 ? "down" : "up"}">${a.sell > 0 ? `− ${money(a.sell)}` : `+ ${money(a.buy)}`}</span></div>`,
         )
-        .join("")}</div>
-      ${plan.mode === "custom" ? `<p class="small ${Math.abs(sum - 100) < 0.05 ? "up" : "warn"}">Total ${sum.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% (os pesos são normalizados se não somarem 100%). Ativos com 0% não recebem aporte.</p>` : ""}
-      <div class="row-between" style="margin-top:14px;gap:8px">
-        <span class="add-ticker"><input id="plan-new" placeholder="Novo ativo (ex.: HGLG11)" autocapitalize="characters"/><button class="ghost" id="plan-add">Adicionar</button></span>
-        <button class="primary" id="plan-ok">Aplicar</button></div>
-      <p class="error small" id="plan-err" hidden></p>`;
-    body.querySelectorAll<HTMLButtonElement>("[data-pmode]").forEach((b) =>
-      b.addEventListener("click", () => {
-        plan.mode = b.dataset.pmode as AssetPlan["mode"];
-        if (plan.mode === "custom" && !plan.weights) {
-          const tot = own.reduce((s, x) => s + x.value, 0);
-          plan.weights = Object.fromEntries(own.map((x) => [x.ticker, Math.round((tot ? x.value / tot : 0) * 1000) / 10]));
-        }
-        draw();
-      }),
-    );
-    body.querySelectorAll<HTMLInputElement>("[data-w]").forEach((inp) =>
-      inp.addEventListener("change", () => {
-        plan.weights = { ...(plan.weights ?? {}), [inp.dataset.w!]: Math.max(0, parseNum(inp.value) ?? 0) };
-        draw();
-      }),
-    );
-    body.querySelectorAll<HTMLButtonElement>("[data-rm]").forEach((b) =>
-      b.addEventListener("click", () => {
-        plan.extra = (plan.extra ?? []).filter((t) => t !== b.dataset.rm);
-        draw();
-      }),
-    );
-    body.querySelector("#plan-add")!.addEventListener("click", async () => {
-      const inp = body.querySelector("#plan-new") as HTMLInputElement;
-      const t = inp.value.trim().toUpperCase();
-      const err = body.querySelector("#plan-err") as HTMLElement;
-      if (!/^[A-Z0-9.^-]{2,15}$/.test(t)) return inp.focus();
-      if (own.some((x) => x.ticker === t) || plan.extra?.includes(t)) return draw();
-      const price = await fetchPrice(t);
-      if (!price) {
-        err.hidden = false;
-        err.textContent = `Não encontrei cotação para ${t}. Confira o código.`;
-        return;
-      }
-      plan.extra = [...(plan.extra ?? []), t];
-      if (plan.mode !== "custom") {
-        plan.mode = "custom";
-        const tot = own.reduce((s, x) => s + x.value, 0);
-        plan.weights = Object.fromEntries(own.map((x) => [x.ticker, Math.round((tot ? x.value / tot : 0) * 1000) / 10]));
-      }
-      plan.weights = { ...(plan.weights ?? {}), [t]: plan.weights?.[t] ?? 0 };
-      draw();
-      (body.querySelector(`[data-w="${t}"]`) as HTMLInputElement | null)?.focus();
-    });
-    body.querySelector("#plan-ok")!.addEventListener("click", () => {
-      p.assetPlans[category] = plan;
-      scheduleSave();
-      m.close();
-      document.getElementById("sim-contribution")!.dispatchEvent(new Event("input"));
-    });
-  };
-  draw();
+        .join("")}${moves.length > top.length ? `<p class="muted small" style="margin:8px 0 0">e mais ${moves.length - top.length} ativo(s) na Carteira.</p>` : ""}${res.deficit > 0.005 ? `<p class="down small">As boletas passam do dinheiro disponível em ${money(res.deficit)}.</p>` : ""}</div></div>
+    </div></div>`;
+  el.querySelector("#sim-open")!.addEventListener("click", openSim);
 }

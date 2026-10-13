@@ -4,6 +4,7 @@ import fs from "node:fs";
 
 const out = "dist/public";
 fs.cpSync("src/web/fonts", `${out}/fonts`, { recursive: true });
+fs.cpSync("src/web/icons", `${out}/icons`, { recursive: true });
 fs.copyFileSync("src/web/styles.css", `${out}/styles.css`);
 const hash = (f) => crypto.createHash("sha1").update(fs.readFileSync(`${out}/${f}`)).digest("hex").slice(0, 10);
 const html = fs

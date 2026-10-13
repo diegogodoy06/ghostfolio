@@ -9,7 +9,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { buildReport, login } from "./report";
-import { loadOverrides } from "./categories";
+import { categorize, loadOverrides } from "./categories";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
@@ -49,19 +49,25 @@ function writeSimulation(data: unknown) {
 }
 
 // ---- Cotação de ativos fora da carteira (Yahoo), para a simulação. ----
-const quoteCache = new Map<string, { at: number; data: { ticker: string; price: number | null; name: string | null } }>();
+type QuoteData = { ticker: string; price: number | null; name: string | null; category: string | null };
+const quoteCache = new Map<string, { at: number; data: QuoteData }>();
 async function quote(ticker: string) {
   const hit = quoteCache.get(ticker);
   if (hit && Date.now() - hit.at < 15 * 60_000) return hit.data;
   const symbol = /^[A-Z]{4}\d{1,2}$/.test(ticker) ? `${ticker}.SA` : ticker;
-  let data: { ticker: string; price: number | null; name: string | null } = { ticker, price: null, name: null };
+  let data: QuoteData = { ticker, price: null, name: null, category: null };
   try {
     const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`, {
       headers: { "User-Agent": "Mozilla/5.0 (ghostfolio-relatorios)" },
       signal: AbortSignal.timeout(10_000),
     });
     const meta = ((await r.json()) as any)?.chart?.result?.[0]?.meta;
-    if (meta?.regularMarketPrice) data = { ticker, price: meta.regularMarketPrice, name: meta.longName ?? meta.shortName ?? null };
+    if (meta?.regularMarketPrice) {
+      const name = meta.longName ?? meta.shortName ?? null;
+      // Mesma categorização da carteira (FII, ação, ETF, BDR, exterior...).
+      const { category } = categorize({ dataSource: "YAHOO", symbol, name, currency: meta.currency ?? "BRL", assetSubClass: meta.instrumentType === "ETF" ? "ETF" : null });
+      data = { ticker, price: meta.regularMarketPrice, name, category };
+    }
   } catch {
     // sem cotação: a simulação mostra só o valor em R$
   }
@@ -69,7 +75,7 @@ async function quote(ticker: string) {
   return data;
 }
 
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2" };
+const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml" };
 
 function send(res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
   const json = typeof body !== "string";
@@ -126,15 +132,15 @@ const server = http.createServer(async (req, res) => {
       }
     }
     // Arquivos estáticos (SPA).
-    // Só arquivos de public/ (e public/fonts/); nada de "..".
+    // Só arquivos de public/ (e public/fonts/, public/icons/); nada de "..".
     const rel = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
     const file = path.basename(rel);
-    const full = path.join(PUBLIC_DIR, /^fonts\/[\w.-]+\.woff2$/.test(rel) ? rel : file);
+    const full = path.join(PUBLIC_DIR, /^(fonts\/[\w.-]+\.woff2|icons\/[\w.-]+\.svg)$/.test(rel) ? rel : file);
     if (fs.existsSync(full)) {
       res.writeHead(200, {
         "content-type": TYPES[path.extname(full)] ?? "application/octet-stream",
         // Sempre revalida: atualizações do app aparecem na hora (fontes podem ficar em cache).
-        "cache-control": rel.startsWith("fonts/") ? "public, max-age=604800" : "no-cache",
+        "cache-control": /^(fonts|icons)\//.test(rel) ? "public, max-age=604800" : "no-cache",
         "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'",
         "x-content-type-options": "nosniff",
       });

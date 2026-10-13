@@ -10,13 +10,13 @@ Isso inicia o Ghostfolio oficial (app, Postgres e Redis), o serviço `ghostfolio
 
 ## Relatórios (localhost:3334)
 
-Relatórios no estilo das corretoras brasileiras, sobre os dados do Ghostfolio. Entre com o mesmo token de segurança do Ghostfolio (fica salvo no aparelho; no celular, use o IP do computador e "Adicionar à tela inicial").
+Extensão do Ghostfolio com o mesmo visual (barra superior com os links dele e menu lateral), com relatórios no estilo das corretoras brasileiras. Entre com o mesmo token de segurança do Ghostfolio (fica salvo no aparelho; no celular, use o IP do computador e "Adicionar à tela inicial").
 
 - **Resumo**: patrimônio, valorização, proventos, desempenho contra CDI, Ibovespa, IPCA, IPCA + 6%, IFIX e dólar (nominal ou real), alocação e evolução do patrimônio.
 - **Carteira**: categorias (Ações por setor, FIIs por tipo, ETFs, Exterior, Tesouro, Renda Fixa) com cada ativo: quantidade, preço médio, preço, retorno, proventos, % da classe e % da carteira.
 - **Proventos**: evolução mensal por categoria, recebidos × estimados, quem mais pagou, por tipo e por ano.
 - **Rentabilidade**: tabela mês a mês com % do CDI e estatísticas (volatilidade, maior queda, melhor/pior mês, Sharpe).
-- **Simulação**: metas por categoria + novo aporte + vendas planejadas → o que comprar, vender ou deixar de aportar, por categoria e por ativo (com cotas inteiras). O dinheiro vai primeiro para o que está mais longe da meta; categorias acima da meta não recebem aporte (ou, com o rebalanceamento completo ligado, vendem o excedente). Dentro de cada categoria, divida proporcionalmente, em partes iguais ou com pesos próprios, inclusive para ativos que você ainda não tem. Uma simulação fica salva no servidor (volume `relatorios-data`) e é sempre recalculada com a carteira atual — salva-se a intenção, não o resultado.
+- **Simulação** (dentro de Carteira, seletor "Carteira atual | Simulação", como a conta simulação do TradeMap): metas por categoria, novo aporte e boletas de compra e venda (botões C/V em cada ativo ou "+ Boleta" para qualquer ticker, inclusive novos). O dinheiro que sobra das boletas é distribuído automaticamente, primeiro para o que está mais longe da meta; categorias acima da meta não recebem aporte (ou vendem o excedente, se ligado). Cada ativo mostra o que muda e como fica depois. A simulação salva aparece também no Resumo e é sempre recalculada com a carteira atual (fica no volume `relatorios-data`).
 
 A rentabilidade é por cota (ponderada no tempo) e **inclui proventos**, como Rico e TradeMap; por isso difere do gráfico de Análise do Ghostfolio, que exclui proventos. Categorias podem ser ajustadas em `extratos/categorias.json`, por exemplo `{ "ITSA4": { "subcategoria": "Financeiro" } }`.
 

@@ -6,25 +6,50 @@
     <meta name="theme-color" content="#191919" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>Relatórios</title>
+    <title>Relatórios · Ghostfolio</title>
+    <link rel="icon" href="icons/ghost.svg" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="top">
-      <div class="brand">Relatórios <span>da carteira</span></div>
-      <div class="top-actions">
-        <select id="account" aria-label="Conta"></select>
-        <button id="refresh" class="icon" title="Atualizar" aria-label="Atualizar">↻</button>
+    <!-- Barra superior no mesmo formato do Ghostfolio: o app é uma extensão dele. -->
+    <header class="gf-toolbar">
+      <a class="gf-logo" data-gf="home" title="Ghostfolio"><span class="logo" aria-hidden="true"></span><span class="label">Ghostfolio</span></a>
+      <span class="spacer"></span>
+      <nav class="gf-links" aria-label="Ghostfolio">
+        <a data-gf="home">Visão geral</a>
+        <a data-gf="portfolio">Portefólio</a>
+        <a data-gf="accounts">Contas</a>
+        <a class="active" href="./" aria-current="page">Relatórios</a>
+        <a data-gf="resources">Recursos</a>
+      </nav>
+      <button class="gf-menu-btn" id="gf-menu" aria-label="Menu" aria-expanded="false"><span class="ico" style="--icon: url(icons/person-circle-outline.svg)"></span></button>
+      <div class="gf-menu" id="gf-menu-list" hidden>
+        <a data-gf="home"><span class="ico" style="--icon: url(icons/home-outline.svg)"></span>Visão geral</a>
+        <a data-gf="portfolio"><span class="ico" style="--icon: url(icons/pie-chart-outline.svg)"></span>Portefólio</a>
+        <a data-gf="accounts"><span class="ico" style="--icon: url(icons/wallet-outline.svg)"></span>Contas</a>
+        <a data-gf="resources"><span class="ico" style="--icon: url(icons/open-outline.svg)"></span>Recursos</a>
       </div>
     </header>
-    <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="resumo">Resumo</button>
-      <button role="tab" data-tab="carteira">Carteira</button>
-      <button role="tab" data-tab="proventos">Proventos</button>
-      <button role="tab" data-tab="rentabilidade">Rentabilidade</button>
-      <button role="tab" data-tab="simulacao">Simulação</button>
-    </nav>
-    <main id="main"><p class="muted center">Carregando…</p></main>
+
+    <div class="page">
+      <nav class="side-tabs tabs" role="tablist" aria-label="Relatórios">
+        <button role="tab" data-tab="resumo"><span class="ico" style="--icon: url(icons/analytics-outline.svg)"></span><span>Resumo</span></button>
+        <button role="tab" data-tab="carteira"><span class="ico" style="--icon: url(icons/pie-chart-outline.svg)"></span><span>Carteira</span></button>
+        <button role="tab" data-tab="proventos"><span class="ico" style="--icon: url(icons/cash-outline.svg)"></span><span>Proventos</span></button>
+        <button role="tab" data-tab="rentabilidade"><span class="ico" style="--icon: url(icons/trending-up-outline.svg)"></span><span>Rentabilidade</span></button>
+      </nav>
+      <div class="content">
+        <div class="page-head">
+          <h1 id="page-title">Resumo</h1>
+          <div class="top-actions">
+            <select id="account" aria-label="Conta"></select>
+            <button id="refresh" class="icon" title="Atualizar" aria-label="Atualizar">↻</button>
+          </div>
+        </div>
+        <main id="main"></main>
+      </div>
+    </div>
+
     <template id="login-tpl">
       <form class="card login">
         <h2>Entrar</h2>
