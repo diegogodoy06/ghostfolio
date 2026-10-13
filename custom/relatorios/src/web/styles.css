@@ -339,3 +339,5 @@ button.mini.sell:hover { background: rgba(220, 53, 69, 0.15); color: #ff6b78; bo
 .sim-cta { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .gf-menu[hidden] { display: none; }
 .sim-summary-grid .stats { align-content: start; }
+button.ghost.danger { color: #ff6b78; }
+button.ghost.danger:hover { background: rgba(220, 53, 69, 0.15); border-color: var(--down); }

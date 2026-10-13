@@ -297,7 +297,17 @@ function renderSimBody(r: Report) {
   body.querySelectorAll<HTMLButtonElement>("[data-trade]").forEach((b) =>
     b.addEventListener("click", (e) => {
       e.stopPropagation();
-      boletaModal(r, { side: b.dataset.trade as "buy" | "sell", ticker: b.dataset.ticker }, refresh);
+      const side = b.dataset.trade as "buy" | "sell";
+      const t = b.dataset.ticker!;
+      // Já existe boleta deste ativo? Abre para editar/excluir em vez de criar outra.
+      const idx = side === "buy" ? (p.buys ?? []).findIndex((x) => x.ticker === t) : p.sales.findIndex((x) => x.ticker === t);
+      boletaModal(r, idx >= 0 ? { side, index: idx } : { side, ticker: t }, refresh);
+    }),
+  );
+  body.querySelectorAll<HTMLButtonElement>("[data-edit-buy]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const idx = (p.buys ?? []).findIndex((x) => x.ticker === b.dataset.editBuy);
+      if (idx >= 0) boletaModal(r, { side: "buy", index: idx }, refresh);
     }),
   );
   body.querySelectorAll<HTMLButtonElement>("[data-add-asset]").forEach((b) => b.addEventListener("click", () => addAssetModal(r, b.dataset.addAsset!, refresh)));
@@ -338,7 +348,7 @@ function categoryBlock(r: Report, c: CategoryAction, res: SimResult) {
       const after = x.value + move;
       const sold = soldAll.has(x.ticker);
       const sim = a && Math.abs(move) > 0.005
-        ? `<span class="${move > 0 ? "up" : "down"}">${move > 0 ? "+" : "−"} ${money(Math.abs(move))}</span><div class="small muted">${move > 0 ? "+" : "−"}${qtyLabel(a.quantity, a.whole)}${a.manual > 0.005 ? " · boleta" : ""}</div>`
+        ? `<span class="${move > 0 ? "up" : "down"}">${move > 0 ? "+" : "−"} ${money(Math.abs(move))}</span><div class="small muted">${move > 0 ? "+" : "−"}${qtyLabel(a.quantity, a.whole)}${a.manual > 0.005 ? ` · <button class="link small" data-edit-buy="${esc(x.ticker)}">boleta</button>` : ""}</div>`
         : `<span class="muted">—</span>`;
       return `<tr class="${x.isNew ? "is-new" : ""} ${sold ? "is-sold" : ""}">
         <td><div class="tk">${esc(x.ticker)}${x.isNew ? ` <span class="badge new">novo</span>` : ""}${sold ? ` <span class="badge sell">venda total</span>` : ""}</div><div class="nm">${esc(x.sub)}</div></td>
@@ -387,7 +397,7 @@ function boletaModal(r: Report, opts: { side: "buy" | "sell"; index?: number; ti
      <div class="toggle" id="b-modes" style="margin:14px 0"></div>
      <label class="field" id="b-amount-wrap"><span id="b-amount-label">Quantidade</span><input id="b-amount" inputmode="decimal" value="${initialAmount != null ? initialAmount.toLocaleString("pt-BR") : ""}"/></label>
      <p class="note" id="b-preview"></p>
-     <div class="row-between" style="margin-top:16px"><span></span><button class="primary" id="b-ok">${opts.index != null ? "Salvar" : "Adicionar à simulação"}</button></div>`,
+     <div class="row-between" style="margin-top:16px">${opts.index != null ? `<button class="ghost danger" id="b-del">Excluir boleta</button>` : "<span></span>"}<button class="primary" id="b-ok">${opts.index != null ? "Salvar" : "Adicionar à simulação"}</button></div>`,
   );
   const $ = <T extends HTMLElement>(s: string) => m.el.querySelector(s) as T;
   const tickerEl = $<HTMLInputElement>("#b-ticker");
@@ -435,6 +445,14 @@ function boletaModal(r: Report, opts: { side: "buy" | "sell"; index?: number; ti
   drawModes();
   preview();
 
+  m.el.querySelector("#b-del")?.addEventListener("click", () => {
+    if (editingBuy) p.buys!.splice(opts.index!, 1);
+    if (editingSale) p.sales.splice(opts.index!, 1);
+    scheduleSave();
+    m.close();
+    onDone();
+    toast("Boleta excluída");
+  });
   $("#b-ok").addEventListener("click", async () => {
     const t = tickerEl.value.trim().toUpperCase();
     if (!t) return tickerEl.focus();

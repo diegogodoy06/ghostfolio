@@ -340,12 +340,13 @@ export function simulate(basePositions: SimPosition[], params: SimulationParams,
 
   for (const c of result) c.assets = c.assets.filter((a) => a.buy > EPS || a.sell > EPS || a.isNew || a.manual > EPS).sort((a, b) => b.buy + b.sell - (a.buy + a.sell));
 
+  // Se as boletas passam do dinheiro disponível, o patrimônio "depois" inclui o que falta aportar.
   return {
     manualBuys,
     deficit,
     buys,
     totalBefore,
-    totalAfter,
+    totalAfter: totalAfter + deficit,
     contribution,
     fromSales,
     fromRebalanceSells: result.reduce((s, c) => s + c.sell, 0),
