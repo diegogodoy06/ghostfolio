@@ -11,6 +11,8 @@ Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutCon
 Chart.defaults.color = "rgba(255,255,255,0.7)";
 // Animação curta só na entrada; dados mudam sem "crescer do zero".
 Chart.defaults.animation = { duration: 450, easing: "easeOutQuart" };
+// Degradês (CanvasGradient) não são interpoláveis: anima forma e posição, não as cores.
+Chart.defaults.animations.colors = false as any;
 Chart.defaults.borderColor = "rgba(255,255,255,0.12)";
 Chart.defaults.font.family = '"Inter", Roboto, "Helvetica Neue", sans-serif';
 
