@@ -58,8 +58,17 @@ code { font-size: 0.9em; background: var(--card-2); padding: 1px 6px; border-rad
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 2rem var(--gutter) 0; flex-wrap: wrap; }
 .page-head h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
 .top-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
-.toggle.scope { border: 1px solid var(--line); background: var(--card); }
-.toggle.scope button { padding: 8px 14px; }
+.toggle.scope { border: 1px solid var(--line); background: var(--card); height: 40px; box-sizing: border-box; align-items: stretch; }
+.toggle.scope button { padding: 0 14px; }
+/* Seletor de conta no mesmo desenho dos botões ao lado (sem a seta nativa do sistema). */
+select#account {
+  appearance: none; -webkit-appearance: none; height: 40px; box-sizing: border-box; padding: 0 38px 0 14px; min-width: 150px;
+  font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); cursor: pointer; border-radius: 999px;
+  background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2336cfcc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center / 14px;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+select#account:hover { background-color: var(--card-3); }
+select#account option { background: var(--card); color: var(--ink); font-weight: 400; }
 select, input { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; transition: border-color 0.15s, box-shadow 0.15s; }
 input:focus, select:focus, button:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
 button.icon { background: var(--card); border: 1px solid var(--line); border-radius: 10px; min-width: 40px; height: 40px; cursor: pointer; font-size: 16px; transition: background 0.15s, transform 0.1s; }
