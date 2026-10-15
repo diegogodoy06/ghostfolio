@@ -63,4 +63,8 @@ export interface Report {
   ghostfolio: Partial<Record<"MTD" | "YTD" | "12M" | "MAX", { pct: number; gain: number }>>;
   /** "Vista do Apresentador" ligada no Ghostfolio: a API devolve os valores apagados. */
   ghostfolioRestricted: boolean;
+  /** Recorte mostrado: tudo, só a carteira ou só a reserva (marcador "Fundo de Emergência"). */
+  scope: "tudo" | "carteira" | "reserva";
+  /** Reserva de emergência: operações com o marcador "Fundo de Emergência" no Ghostfolio. */
+  reserve: { value: number; tagged: boolean };
 }

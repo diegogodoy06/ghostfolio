@@ -59,6 +59,7 @@ const state = {
   realMode: saved("rel.real", "0") === "1",
   bench: new Set(saved("rel.bench", "carteira,cdi,ibov").split(",")),
   account: saved("rel.account", ""),
+  scope: (["tudo", "carteira", "reserva"].includes(saved("rel.scope", "carteira")) ? saved("rel.scope", "carteira") : "carteira") as Report["scope"],
   incomeRange: saved("rel.incomeRange", "24"),
   report: null as Report | null,
 };
@@ -89,7 +90,7 @@ function updatePrivacyButton() {
 }
 
 async function fetchReport(refresh: boolean) {
-  const res = await fetch(`/api/report?accounts=${encodeURIComponent(state.account)}${refresh ? "&refresh=1" : ""}`);
+  const res = await fetch(`/api/report?scope=${state.scope}&accounts=${encodeURIComponent(state.account)}${refresh ? "&refresh=1" : ""}`);
   if (res.status === 401) return showLogin();
   if (!res.ok) {
     main.innerHTML = `<div class="card"><p class="error">Erro ao carregar: ${esc((await res.json().catch(() => ({}))).error ?? res.statusText)}</p></div>`;
@@ -129,7 +130,11 @@ function render() {
   const r = state.report;
   if (!r) return;
   if (!r.daily.length) {
-    main.innerHTML = `<div class="card"><p class="muted">Ainda não há atividades nesta carteira.</p></div>`;
+    main.innerHTML =
+      r.scope === "reserva"
+        ? `<div class="card notice-card"><h2 style="margin:0 0 6px">Nenhuma operação marcada como reserva</h2>
+      <p class="muted" style="margin:0">A reserva de emergência é o que tiver o marcador <b>Fundo de Emergência</b> no Ghostfolio. Em <a href="${GHOSTFOLIO}portfolio/activities">Portfólio → Atividades</a>, edite a compra (Tesouro Selic, CDB…) e escolha esse marcador em “Marcadores”. A partir daí ela aparece aqui e sai da visão “Carteira”.</p></div>`
+        : `<div class="card"><p class="muted">Ainda não há atividades nesta carteira.</p></div>`;
     return;
   }
   document.getElementById("page-title")!.textContent = TITLES[state.tab] + (state.tab === "carteira" && state.carteiraMode === "sim" ? " · simulação" : "");
@@ -589,6 +594,19 @@ document.getElementById("account")!.addEventListener("change", (e) => {
   save("rel.account", state.account);
   load();
 });
+function updateScopeButtons() {
+  document.querySelectorAll<HTMLButtonElement>("#scope button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scope === state.scope)));
+}
+updateScopeButtons();
+document.querySelectorAll<HTMLButtonElement>("#scope button").forEach((b) =>
+  b.addEventListener("click", () => {
+    if (b.dataset.scope === state.scope) return;
+    state.scope = b.dataset.scope as Report["scope"];
+    save("rel.scope", state.scope);
+    updateScopeButtons();
+    load();
+  }),
+);
 document.getElementById("refresh")!.addEventListener("click", () => load(true));
 document.getElementById("claude")!.addEventListener("click", () => {
   if (state.report && !state.report.ghostfolioRestricted) void openClaudeModal(state.report);

@@ -8,7 +8,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { buildReport, login } from "./report";
+import { SCOPES, type Scope, buildReport, login } from "./report";
 import { loadOverrides } from "./categories";
 import { quote } from "./quote";
 
@@ -81,11 +81,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/report") {
       if (!authed(req)) return send(res, 401, { error: "login" });
       const accounts = (url.searchParams.get("accounts") ?? "").split(",").filter(Boolean).sort();
-      const key = accounts.join(",");
+      const scope: Scope = SCOPES.find((x) => x === url.searchParams.get("scope")) ?? "tudo";
+      const key = `${scope}|${accounts.join(",")}`;
       const hit = cache.get(key);
       if (hit && Date.now() - hit.at < CACHE_MS && url.searchParams.get("refresh") !== "1") return send(res, 200, hit.data);
       loadOverrides(OVERRIDES);
-      const data = await buildReport(await login(BASE_URL, TOKEN), accounts);
+      const data = await buildReport(await login(BASE_URL, TOKEN), accounts, scope);
       cache.set(key, { at: Date.now(), data });
       return send(res, 200, data);
     }

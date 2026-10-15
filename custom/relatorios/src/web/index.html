@@ -42,6 +42,11 @@
         <div class="page-head">
           <h1 id="page-title">Resumo</h1>
           <div class="top-actions">
+            <div class="toggle scope" id="scope" role="group" aria-label="O que mostrar">
+              <button data-scope="tudo" title="Carteira e reserva de emergência juntas">Tudo</button>
+              <button data-scope="carteira" title="Sem a reserva de emergência">Carteira</button>
+              <button data-scope="reserva" title="Só o que tem o marcador Fundo de Emergência">Reserva</button>
+            </div>
             <select id="account" aria-label="Conta"></select>
             <button id="claude" class="ghost claude-btn" title="Gerar prompt com os dados da carteira para o Claude"><span class="ico" style="--icon: url(icons/sparkles-outline.svg)"></span><span>Analisar com Claude</span></button>
             <button id="privacy" class="icon" aria-pressed="false" aria-label="Ocultar valores"><span class="ico" style="--icon: url(icons/eye-outline.svg)"></span></button>

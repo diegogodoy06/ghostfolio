@@ -18,6 +18,8 @@ const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" 
 const p = (n: number | null | undefined, d = 1) => (n == null || !Number.isFinite(n) ? "—" : `${(n * 100).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d })}%`);
 const today = () => new Date().toISOString().slice(0, 10);
 
+const STATUS_PT: Record<string, string> = { comprar: "comprar", vender: "vender", acima: "acima da meta, sem compra", "na-meta": "sem compra nesta simulação", "sem-meta": "sem meta" };
+
 export function buildContext(r: Report, opts: ContextOptions = {}): string {
   const hide = !!opts.hideValues;
   const m = (n: number) => (hide ? "(oculto)" : brl.format(n));
@@ -37,6 +39,8 @@ export function buildContext(r: Report, opts: ContextOptions = {}): string {
   lines.push(`- Patrimônio: ${m(s.value)} · investido: ${m(s.cost)} · valorização sobre o custo: ${p(s.gainPct)}`);
   lines.push(`- Proventos últimos 12 meses: ${m(s.income12m)} (yield ${p(s.yield12m, 2)})`);
   lines.push(`- Início do histórico: ${r.firstDate.split("-").reverse().join("/")}`);
+  if (r.scope === "carteira") lines.push(`- Reserva de emergência (fora destes números): ${r.reserve.tagged ? m(r.reserve.value) : "ainda não marcada no Ghostfolio"}`);
+  if (r.scope === "reserva") lines.push("- Estes números são só da reserva de emergência.");
   lines.push("");
 
   // Desempenho
@@ -123,7 +127,7 @@ export function buildContext(r: Report, opts: ContextOptions = {}): string {
       lines.push("- Resultado calculado:");
       for (const c of res.categories) {
         const moves = c.assets.filter((a) => a.buy > 0.5 || a.sell > 0.5).slice(0, 8).map((a) => `${a.ticker} ${a.sell > 0 ? "−" : "+"}${hide ? "" : m(a.buy || a.sell)}`.trim());
-        lines.push(`  - ${c.name}: ${c.status}${moves.length ? ` → ${moves.join(", ")}` : ""} (depois ${p(res.totalAfter ? c.final / res.totalAfter : 0)})`);
+        lines.push(`  - ${c.name}: ${STATUS_PT[c.status] ?? c.status}${moves.length ? ` → ${moves.join(", ")}` : ""} (depois ${p(res.totalAfter ? c.final / res.totalAfter : 0)})`);
       }
     }
     lines.push("");

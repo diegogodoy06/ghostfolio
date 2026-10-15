@@ -21,6 +21,7 @@ interface Activity {
   valueInBaseCurrency: number;
   accountId: string | null;
   assetProfile: Profile;
+  tags?: { id: string }[];
 }
 
 interface Holding {
@@ -91,22 +92,67 @@ async function series(api: Api, dataSource: string, symbol: string, days: number
 }
 
 /** O Ghostfolio devolve a carteira vazia enquanto recalcula o cache: tenta de novo. */
-export async function buildReport(api: Api, accountIds: string[]): Promise<Report> {
+export async function buildReport(api: Api, accountIds: string[], scope: Scope = "tudo"): Promise<Report> {
   for (let attempt = 1; ; attempt++) {
-    const report = await buildOnce(api, accountIds);
+    const report = await buildOnce(api, accountIds, scope);
     if (report.summary.value > 0 || report.incomes.length === 0 || report.ghostfolioRestricted || attempt >= 4) return report;
     await new Promise((r) => setTimeout(r, 4_000));
   }
 }
 
-async function buildOnce(api: Api, accountIds: string[]): Promise<Report> {
-  const filter = accountIds.length ? `&accounts=${accountIds.map(encodeURIComponent).join(",")}` : "";
-  const [{ accounts }, { activities }, details, user] = await Promise.all([
+/** Marcador do sistema "Fundo de Emergência" do Ghostfolio. */
+export const TAG_EMERGENCY_FUND = "4452656d-9fa4-4bd0-ba38-70492e31d180";
+/** Tudo, só a carteira (sem a reserva) ou só a reserva de emergência. */
+export type Scope = "tudo" | "carteira" | "reserva";
+export const SCOPES: Scope[] = ["tudo", "carteira", "reserva"];
+
+const holdingList = (h: Holding[] | Record<string, Holding>) => (Array.isArray(h) ? h : Object.values(h));
+
+/**
+ * "Carteira" = tudo menos o que tem o marcador de reserva. O Ghostfolio só filtra para incluir um
+ * marcador, então a carteira sai da subtração: posições por ativo e gráfico por data.
+ */
+function subtractHoldings(all: Holding[], minus: Holding[]) {
+  const by = new Map(minus.map((h) => [h.assetProfile.symbol, h]));
+  return all.map((h) => {
+    const m = by.get(h.assetProfile.symbol);
+    return m ? { ...h, quantity: h.quantity - m.quantity, valueInBaseCurrency: h.valueInBaseCurrency - m.valueInBaseCurrency, investment: h.investment - m.investment } : h;
+  });
+}
+function subtractChart(all: [string, ChartItem][], minus: [string, ChartItem][]): [string, ChartItem][] {
+  const by = new Map(minus);
+  let last: ChartItem | undefined;
+  return all.map(([d, c]) => {
+    last = by.get(d) ?? last;
+    if (!last) return [d, c];
+    const v = (x: ChartItem) => x.valueWithCurrencyEffect ?? x.value ?? 0;
+    return [d, { date: c.date, valueWithCurrencyEffect: v(c) - v(last), totalInvestment: (c.totalInvestment ?? 0) - (last.totalInvestment ?? 0) }];
+  });
+}
+
+async function buildOnce(api: Api, accountIds: string[], scope: Scope): Promise<Report> {
+  const accFilter = accountIds.length ? `&accounts=${accountIds.map(encodeURIComponent).join(",")}` : "";
+  const tagFilter = `&tags=${TAG_EMERGENCY_FUND}`;
+  const [{ accounts }, { activities: allActivities }, details, user] = await Promise.all([
     api<{ accounts: { id: string; name: string }[] }>("/v1/account"),
-    api<{ activities: Activity[] }>(`/v1/activities?${filter.slice(1)}`),
-    api<{ holdings: Holding[] | Record<string, Holding> }>(`/v1/portfolio/details?range=max${filter}`),
+    api<{ activities: Activity[] }>(`/v1/activities?${accFilter.slice(1)}`),
+    api<{ holdings: Holding[] | Record<string, Holding> }>(`/v1/portfolio/details?range=max${accFilter}`),
     api<{ settings: { baseCurrency?: string; isRestrictedView?: boolean } }>("/v1/user"),
   ]);
+  const isReserve = (a: Activity) => !!a.tags?.some((t) => t.id === TAG_EMERGENCY_FUND);
+  const hasReserve = allActivities.some(isReserve);
+  // Sem nada marcado, o Ghostfolio ignora o filtro e devolveria tudo: a reserva fica vazia.
+  const reserveHoldings = hasReserve ? holdingList((await api<{ holdings: Holding[] | Record<string, Holding> }>(`/v1/portfolio/details?range=max${accFilter}${tagFilter}`)).holdings) : [];
+  const reserveValue = reserveHoldings.reduce((s, h) => s + h.valueInBaseCurrency, 0);
+  const activities = scope === "tudo" || !hasReserve ? (scope === "reserva" ? [] : allActivities) : allActivities.filter((a) => (scope === "reserva") === isReserve(a));
+  const scopedHoldings =
+    scope === "reserva" ? reserveHoldings : scope === "carteira" && hasReserve ? subtractHoldings(holdingList(details.holdings), reserveHoldings) : holdingList(details.holdings);
+  const filter = scope === "reserva" ? accFilter + tagFilter : accFilter;
+  const chartFor = async (firstYear: number) => {
+    if (scope === "reserva" && !hasReserve) return [];
+    const base = await dailyChart(api, firstYear, filter);
+    return scope === "carteira" && hasReserve ? subtractChart(base, await dailyChart(api, firstYear, accFilter + tagFilter)) : base;
+  };
 
   // ---- Proventos ----
   const today = new Date().toISOString().slice(0, 10);
@@ -125,7 +171,7 @@ async function buildOnce(api: Api, accountIds: string[]): Promise<Report> {
   const incomeBy = (ticker: string, from = "") => incomes.filter((i) => i.ticker === ticker && i.date >= from).reduce((s, i) => s + i.value, 0);
 
   // ---- Posições e categorias ----
-  const holdings = (Array.isArray(details.holdings) ? details.holdings : Object.values(details.holdings)).filter((h) => h.quantity > 1e-9);
+  const holdings = scopedHoldings.filter((h) => h.quantity > 1e-9);
   const total = holdings.reduce((s, h) => s + h.valueInBaseCurrency, 0);
   const positions: Position[] = holdings.map((h) => {
     const { category, subcategory } = categorize(h.assetProfile);
@@ -173,7 +219,7 @@ async function buildOnce(api: Api, accountIds: string[]): Promise<Report> {
   // ---- Rentabilidade diária (TWR com proventos) ----
   const trades = activities.filter((a) => a.type === "BUY" || a.type === "SELL");
   const firstDate = trades.reduce((m, a) => (day(a.date) < m ? day(a.date) : m), today);
-  const chart = await dailyChart(api, Number(firstDate.slice(0, 4)), filter);
+  const chart = await chartFor(Number(firstDate.slice(0, 4)));
   const flows = new Map<string, number>();
   for (const a of trades) flows.set(day(a.date), (flows.get(day(a.date)) ?? 0) + (a.type === "BUY" ? 1 : -1) * (a.valueInBaseCurrency ?? a.quantity * a.unitPrice));
   const divs = new Map<string, number>();
@@ -220,7 +266,7 @@ async function buildOnce(api: Api, accountIds: string[]): Promise<Report> {
 
   // Números do próprio Ghostfolio, para mostrar lado a lado com a rentabilidade por cota.
   const ghostfolio: Report["ghostfolio"] = {};
-  for (const [key, range] of [["MTD", "mtd"], ["YTD", "ytd"], ["12M", "1y"], ["MAX", "max"]] as const) {
+  for (const [key, range] of scope === "carteira" && hasReserve ? [] : ([["MTD", "mtd"], ["YTD", "ytd"], ["12M", "1y"], ["MAX", "max"]] as const)) {
     try {
       const { performance: p } = await api<{ performance: { netPerformancePercentageWithCurrencyEffect: number; netPerformanceWithCurrencyEffect: number } }>(
         `/v2/portfolio/performance?range=${range}${filter}`,
@@ -260,5 +306,7 @@ async function buildOnce(api: Api, accountIds: string[]): Promise<Report> {
     firstDate,
     ghostfolio,
     ghostfolioRestricted: !!user.settings.isRestrictedView,
+    scope,
+    reserve: { value: reserveValue, tagged: hasReserve },
   };
 }

@@ -29,7 +29,7 @@ let cached: { at: number; report: Report } | null = null;
 async function getReport(): Promise<Report> {
   if (cached && Date.now() - cached.at < 5 * 60_000) return cached.report;
   loadOverrides(OVERRIDES);
-  const report = await buildReport(await login(BASE_URL, TOKEN), []);
+  const report = await buildReport(await login(BASE_URL, TOKEN), [], "carteira");
   if (report.ghostfolioRestricted) throw new Error("A Vista do Apresentador está ligada no Ghostfolio e a API esconde os valores. Desligue em Minha conta.");
   cached = { at: Date.now(), report };
   return report;
