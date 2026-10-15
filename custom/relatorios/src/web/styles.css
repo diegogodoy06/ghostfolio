@@ -387,3 +387,9 @@ button.ghost.danger:hover { background: rgba(220, 53, 69, 0.15); border-color: v
 .claude-opts { display: grid; gap: 2px; margin-bottom: 12px; }
 .prompt-box { width: 100%; min-height: 320px; max-height: 50vh; resize: vertical; background: var(--page); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); }
 .prompt-box:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+
+/* Dicas da simulação salva na Carteira atual: pequenas e apagadas, só como referência. */
+.sim-hint { display: block; font-size: 11px; font-weight: 500; color: var(--muted); opacity: 0.75; margin-top: 2px; white-space: nowrap; }
+.sim-hint:empty { display: none; }
+.sim-hint.inline { display: inline; margin: 0; opacity: 0.85; }
+#cat-missing { margin: 10px 0 0; white-space: normal; }

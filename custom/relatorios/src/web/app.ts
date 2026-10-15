@@ -5,7 +5,7 @@ import {
 import type { CategoryGroup, Position, Report } from "../shared";
 import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, real, rebased, ret, stats } from "./calc";
 import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, axisMoney, countUp, dateBR, esc, fadeFill, growBars, privacy, toast, money, openModal, pct, qty, skeleton, spinDonut, spct, tone } from "./ui";
-import { mountSimSummary, renderCarteiraSim } from "./simulacao";
+import { mountSimSummary, renderCarteiraSim, simOutlook } from "./simulacao";
 import { openClaudeModal } from "./claude";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
@@ -319,14 +319,14 @@ function positionsTable(ps: Position[]) {
     .map(
       (p) => `<tr class="clickable" data-ticker="${esc(p.ticker)}">
       <td><div class="tk">${esc(p.ticker)}</div><div class="nm">${esc(p.subcategory)}</div></td>
-      <td>${qty(p.quantity)}</td><td>${money(p.avgPrice)}</td><td>${money(p.price)}</td><td>${money(p.value)}</td>
+      <td>${qty(p.quantity)}</td><td>${money(p.avgPrice)}</td><td>${money(p.price)}</td><td>${money(p.value)}<span class="sim-hint" data-sim-asset="${esc(p.ticker)}"></span></td>
       <td class="${tone(p.gain)}">${money(p.gain)}<div class="small">${spct(p.gainPct)}</div></td>
       <td>${money(p.income)}</td><td>${pct(p.weightInCategory, 1)}</td><td>${pct(p.weight, 1)}</td></tr>`,
     )
     .join("");
   const cards = ps
     .map(
-      (p) => `<div class="pos" data-ticker="${esc(p.ticker)}"><div class="head"><span>${esc(p.ticker)} <span class="muted small">${qty(p.quantity)} cotas</span></span><span>${money(p.value)}</span></div>
+      (p) => `<div class="pos" data-ticker="${esc(p.ticker)}"><div class="head"><span>${esc(p.ticker)} <span class="muted small">${qty(p.quantity)} cotas</span></span><span>${money(p.value)}<span class="sim-hint" data-sim-asset="${esc(p.ticker)}"></span></span></div>
       <div class="grid"><div><div class="l">P. médio</div>${money(p.avgPrice)}</div><div><div class="l">Preço</div>${money(p.price)}</div><div><div class="l">Retorno</div><span class="${tone(p.gain)}">${spct(p.gainPct, 1)}</span></div>
       <div><div class="l">Proventos</div>${money(p.income)}</div><div><div class="l">% classe</div>${pct(p.weightInCategory, 1)}</div><div><div class="l">% carteira</div>${pct(p.weight, 1)}</div></div></div>`,
     )
@@ -357,7 +357,7 @@ function renderCarteira(r: Report) {
   main.innerHTML =
     modeBar() +
     `<section class="split"><div class="card"><h2>Minha carteira · ${money(total)}</h2><div class="chart-box donut"><canvas id="alloc"></canvas></div></div>
-     <div class="card"><h2>Por categoria</h2>${legendList(r.categories.map((c) => ({ label: c.name, value: c.value, weight: c.weight, color: CATEGORY_COLOR[c.name] ?? PALETTE[8]! })))}
+     <div class="card"><h2>Por categoria</h2><div id="cat-legend">${legendList(r.categories.map((c) => ({ label: c.name, value: c.value, weight: c.weight, color: CATEGORY_COLOR[c.name] ?? PALETTE[8]! })))}</div><p class="sim-hint" id="cat-missing" hidden></p>
      <p class="note">Ajuste a categoria de um ativo em <code>extratos/categorias.json</code>.</p></div></section>` +
     r.categories
       .map((c: CategoryGroup, i) => {
@@ -365,7 +365,7 @@ function renderCarteira(r: Report) {
         const gain = c.value - c.cost;
         return `<details class="cat" ${i === 0 ? "open" : ""}>
         <summary><span class="ring" style="border:3px solid ${color}">${pct(c.weight, 0)}</span>
-          <span><div class="t">${esc(c.name)}</div><div class="muted small">${c.positions.length} ativo(s) · custo ${money(c.cost)}</div></span>
+          <span><div class="t">${esc(c.name)}</div><div class="muted small">${c.positions.length} ativo(s) · custo ${money(c.cost)}<span class="sim-hint inline" data-sim-cat="${esc(c.name)}"></span></div></span>
           <span style="text-align:right"><div class="t">${money(c.value)}</div><div class="small ${tone(gain)}">${spct(c.cost ? gain / c.cost : null)}</div></span>
           <span class="chev">›</span></summary>
         <div class="body"><div class="split"><div class="chart-box donut"><canvas id="sub-${i}"></canvas></div><div>${legendList(c.subgroups.map((g, j) => ({ label: g.name, value: g.value, weight: g.weight, color: PALETTE[j % PALETTE.length]! })))}</div></div>
@@ -383,6 +383,40 @@ function renderCarteira(r: Report) {
   main.querySelectorAll("details.cat").forEach((d, i) => {
     if ((d as HTMLDetailsElement).open) drawSub(i);
     d.addEventListener("toggle", () => (d as HTMLDetailsElement).open && drawSub(i));
+  });
+  void simHints(r);
+}
+
+/** Dicas discretas da simulação salva ao lado dos números atuais: meta e como fica depois. */
+async function simHints(r: Report) {
+  const el = main;
+  const o = await simOutlook(r).catch(() => null);
+  if (!o || state.tab !== "carteira" || state.carteiraMode !== "atual" || !el.contains(document.getElementById("cat-legend"))) return;
+  const catText = (name: string) => {
+    const c = o.cats.get(name);
+    if (!c || (!c.target && !o.active)) return "";
+    return [c.target ? `meta ${pct(c.target, 0)}` : "", o.active ? `simulação → ${pct(c.after, 1)}` : ""].filter(Boolean).join(" · ");
+  };
+  document.querySelectorAll<HTMLElement>("#cat-legend .li").forEach((li, i) => {
+    const t = catText(r.categories[i]?.name ?? "");
+    if (t) li.children[1]!.insertAdjacentHTML("beforeend", `<span class="sim-hint">${t}</span>`);
+  });
+  const missing = [...o.cats.keys()].filter((n) => !r.categories.some((c) => c.name === n) && catText(n));
+  const m = document.getElementById("cat-missing")!;
+  if (missing.length) {
+    m.hidden = false;
+    m.textContent = `Sem posição ainda: ${missing.map((n) => `${n} (${catText(n)})`).join(", ")}`;
+  }
+  el.querySelectorAll<HTMLElement>("[data-sim-cat]").forEach((h) => {
+    const t = catText(h.dataset.simCat!);
+    if (t) h.textContent = ` · ${t}`;
+  });
+  el.querySelectorAll<HTMLElement>("[data-sim-asset]").forEach((h) => {
+    const a = o.assets.get(h.dataset.simAsset!);
+    if (a) {
+      h.textContent = a.after < 0.5 ? "simulação → vender tudo" : `simulação → ${money(a.after)} · ${pct(a.weight, 1)}`;
+      h.title = "Como fica depois da simulação salva";
+    }
   });
 }
 

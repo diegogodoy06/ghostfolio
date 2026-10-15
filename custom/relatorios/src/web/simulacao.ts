@@ -528,6 +528,26 @@ function addAssetModal(r: Report, category: string, onDone: () => void) {
 // Cartão no Resumo
 // =====================================================================================
 
+/** Metas e efeito da simulação salva, para as dicas discretas na Carteira atual. */
+export async function simOutlook(r: Report) {
+  const p = await ensureParams(r);
+  const active = isActive(p);
+  const res = simulate(positionsOf(r), p, quotes);
+  const cats = new Map(res.categories.map((c) => [c.name, { target: c.target, after: res.totalAfter ? c.final / res.totalAfter : 0 }]));
+  const assets = new Map<string, { after: number; weight: number }>();
+  if (active) {
+    const own = new Map(positionsOf(r).map((x) => [x.ticker, x.value]));
+    const delta = new Map<string, number>();
+    for (const s of res.sales) if (s.value > 0.5) delta.set(s.ticker, (delta.get(s.ticker) ?? 0) - s.value);
+    for (const c of res.categories) for (const a of c.assets) delta.set(a.ticker, (delta.get(a.ticker) ?? 0) + a.buy - a.sell);
+    for (const [t, d] of delta) if (Math.abs(d) > 0.5) {
+      const after = Math.max(0, (own.get(t) ?? 0) + d);
+      assets.set(t, { after, weight: res.totalAfter ? after / res.totalAfter : 0 });
+    }
+  }
+  return { active, cats, assets };
+}
+
 export async function mountSimSummary(el: HTMLElement, r: Report, openSim: () => void) {
   const p = await ensureParams(r);
   if (!document.body.contains(el)) return;
