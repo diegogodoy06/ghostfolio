@@ -16,9 +16,9 @@ export function loadGoals(): Promise<Goal[]> {
   return loading;
 }
 
-async function saveGoals() {
+async function saveGoals(quiet = false) {
   const res = await fetch("/api/goals", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ goals }) });
-  toast(res.ok ? "Metas salvas" : "Não foi possível salvar as metas");
+  if (!res.ok || !quiet) toast(res.ok ? "Metas salvas" : "Não foi possível salvar as metas");
 }
 
 /** O histórico diário só serve se o recorte carregado for o mesmo da meta (ou se não houver reserva marcada). */
@@ -55,13 +55,30 @@ export async function renderMetas(r: Report, main: HTMLElement, charts: Chart[])
       head +
       `<div class="card goal-empty"><h2 style="margin:0 0 6px">Nenhuma meta ainda</h2><p class="muted" style="margin:0 0 16px">Exemplo: R$ 100 mil até dezembro de 2030, aportando R$ 500 por mês. A tela mostra se você está no ritmo e quanto precisa aportar.</p><button class="ghost" id="goal-new-2">Criar minha primeira meta</button></div>`;
   } else {
-    main.innerHTML = head + list.map((g) => goalCard(r, g)).join("");
+    main.innerHTML = head + list.map((g, i) => goalCard(r, g, i, list.length)).join("");
   }
   main.querySelectorAll("#goal-new, #goal-new-2").forEach((b) => b.addEventListener("click", () => goalModal(r, null, () => renderMetas(r, main, charts))));
   for (const g of list) {
     const card = main.querySelector<HTMLElement>(`[data-goal="${g.id}"]`);
     if (!card) continue;
     card.querySelector(".goal-edit")!.addEventListener("click", () => goalModal(r, g, () => renderMetas(r, main, charts)));
+    card.querySelectorAll<HTMLButtonElement>("[data-move]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const from = list.findIndex((x) => x.id === g.id);
+        const to = from + Number(b.dataset.move);
+        if (to < 0 || to >= list.length) return;
+        const next = [...list];
+        [next[from], next[to]] = [next[to]!, next[from]!];
+        goals = next;
+        charts.splice(0).forEach((c) => c.destroy());
+        await renderMetas(r, main, charts);
+        // Mantém a meta movida à vista e com o foco no mesmo botão.
+        const moved = main.querySelector<HTMLElement>(`[data-goal="${g.id}"]`);
+        moved?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        (moved?.querySelector<HTMLElement>(`[data-move="${b.dataset.move}"]:not(:disabled)`) ?? moved?.querySelector<HTMLElement>("[data-move]:not(:disabled)"))?.focus();
+        await saveGoals(true);
+      }),
+    );
     card.querySelector(".goal-del")!.addEventListener("click", async () => {
       if (!confirm(`Excluir a meta "${g.name}"?`)) return;
       goals = list.filter((x) => x.id !== g.id);
@@ -73,7 +90,7 @@ export async function renderMetas(r: Report, main: HTMLElement, charts: Chart[])
   }
 }
 
-function goalCard(r: Report, g: Goal) {
+function goalCard(r: Report, g: Goal, index: number, count: number) {
   const value = baseValue(r, g.base) ?? 0;
   const p = planGoal(g, value);
   return `<section class="card goal" data-goal="${esc(g.id)}">
@@ -81,6 +98,7 @@ function goalCard(r: Report, g: Goal) {
       <div><h2 style="margin:0">${esc(g.name)}</h2>
         <p class="muted small" style="margin:4px 0 0">${money(g.target)}${g.real ? " em valores de hoje" : ""} até ${monthLong(g.date)} · ${g.base === "tudo" ? "carteira + reserva" : "só a carteira"} · ${pct(g.annualReturn / 100, 1)} a.a. esperados</p></div>
       <div class="goal-actions"><span class="badge ${statusClass(p.status)}">${STATUS_LABEL[p.status]}</span>
+        ${count > 1 ? `<span class="goal-move"><button class="icon" data-move="-1" aria-label="Subir meta" title="Subir" ${index === 0 ? "disabled" : ""}>↑</button><button class="icon" data-move="1" aria-label="Descer meta" title="Descer" ${index === count - 1 ? "disabled" : ""}>↓</button></span>` : ""}
         <button class="ghost small-btn goal-edit">Editar</button><button class="icon goal-del" aria-label="Excluir meta" title="Excluir">✕</button></div>
     </div>
     <div class="goal-progress"><div class="track"><div class="fill" style="width:${(p.progress * 100).toFixed(1)}%"></div></div>

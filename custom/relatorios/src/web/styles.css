@@ -400,6 +400,12 @@ button.ghost.danger:hover { background: rgba(220, 53, 69, 0.15); border-color: v
 .goal-actions { display: flex; align-items: center; gap: 8px; }
 .goal-actions .small-btn { padding: 7px 12px; font-size: 13px; }
 .goal-actions .icon { min-width: 34px; height: 34px; font-size: 13px; color: var(--muted); }
+.goal-move { display: inline-flex; }
+.goal-move .icon { font-size: 15px; }
+.goal-move .icon:first-child { border-radius: 10px 0 0 10px; }
+.goal-move .icon:last-child { border-radius: 0 10px 10px 0; margin-left: -1px; }
+.goal-move .icon:disabled { opacity: 0.35; cursor: default; }
+.goal-move .icon:not(:disabled):hover { color: var(--accent); }
 .goal-progress, .goal-mini { display: grid; gap: 6px; }
 .goal .track, .goal-mini .track { height: 10px; border-radius: 999px; background: var(--card-3); overflow: hidden; }
 .goal .track .fill, .goal-mini .track .fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #2aa8a6, var(--accent)); transform-origin: left; animation: grow-x 0.9s var(--ease) both; }
