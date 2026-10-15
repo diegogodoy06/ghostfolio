@@ -7,6 +7,7 @@ import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodS
 import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, axisMoney, countUp, dateBR, esc, fadeFill, growBars, privacy, toast, money, openModal, pct, qty, skeleton, spinDonut, spct, tone } from "./ui";
 import { mountSimSummary, renderCarteiraSim, simOutlook } from "./simulacao";
 import { openClaudeModal } from "./claude";
+import { mountGoalsSummary, renderMetas } from "./metas";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
 Chart.defaults.color = "rgba(255,255,255,0.7)";
@@ -26,9 +27,9 @@ const BENCH = [
 ] as const;
 
 // ---------- estado ----------
-type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade";
-const TABS: Tab[] = ["resumo", "carteira", "proventos", "rentabilidade"];
-const TITLES: Record<Tab, string> = { resumo: "Resumo", carteira: "Carteira", proventos: "Proventos", rentabilidade: "Rentabilidade" };
+type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade" | "metas";
+const TABS: Tab[] = ["resumo", "carteira", "proventos", "rentabilidade", "metas"];
+const TITLES: Record<Tab, string> = { resumo: "Resumo", carteira: "Carteira", proventos: "Proventos", rentabilidade: "Rentabilidade", metas: "Metas" };
 /** Hash inicial; "#simulacao" (endereço antigo) abre a Carteira já no modo simulação. */
 function tabFromHash(): Tab {
   const h = location.hash.slice(1);
@@ -145,7 +146,7 @@ function render() {
       <p class="muted" style="margin:0">Com ela ligada, o Ghostfolio esconde quantidades e valores em tudo que entrega pela API, então os relatórios ficam zerados e a sincronização automática fica pausada. Desligue em <a href="${GHOSTFOLIO}account">Ghostfolio → Minha conta</a> e use o botão do olho aqui em cima para ocultar os valores nos relatórios.</p></div>`;
     return;
   }
-  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade })[state.tab](r);
+  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade, metas: (x: Report) => void renderMetas(x, main, charts) })[state.tab](r);
   void main.offsetWidth; // reinicia a animação de entrada
   main.classList.add("enter");
   countUp(main);
@@ -221,6 +222,7 @@ function renderResumo(r: Report) {
       <div class="card kpi"><div class="label">Rendimento no período</div><div class="value ${tone(gain)}">${money(gain)}</div><div class="sub">sendo ${money(incomesPeriod)} em proventos</div></div>
     </section>
     <section id="sim-summary"></section>
+    <section id="goals-summary"></section>
     <section class="card">
       <div class="row-between"><h2>Meu desempenho</h2>${realToggle()}</div>
       ${periodChips()}
@@ -252,6 +254,11 @@ function renderResumo(r: Report) {
   );
 
   mountSimSummary(document.getElementById("sim-summary")!, r, () => openCarteira("sim"));
+  void mountGoalsSummary(document.getElementById("goals-summary")!, r, () => {
+    state.tab = "metas";
+    history.replaceState(null, "", "#metas");
+    render();
+  });
 
   // Desempenho: carteira x referências, rebaseadas a 0%.
   const days = r.daily.filter((p) => p.date >= from).map((p) => p.date);

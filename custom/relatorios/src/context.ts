@@ -5,6 +5,7 @@
 import type { Report } from "./shared";
 import { type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, ret, stats } from "./web/calc";
 import { type Quote, type SimulationParams, simulate } from "./sim-engine";
+import { type Goal, goalsMarkdown } from "./goals";
 
 export interface ContextOptions {
   /** Só percentuais: sem valores em R$ nem quantidades. */
@@ -12,6 +13,8 @@ export interface ContextOptions {
   simulation?: { params: SimulationParams; quotes?: Record<string, Quote> } | null;
   /** Incluir a tabela completa de posições (padrão: sim). */
   positions?: boolean;
+  /** Metas de patrimônio (valor até uma data). */
+  goals?: Goal[];
 }
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -109,6 +112,8 @@ export function buildContext(r: Report, opts: ContextOptions = {}): string {
   const estimated = r.incomes.filter((i) => i.estimated).reduce((t, i) => t + i.value, 0);
   if (estimated > 0) lines.push(`- Estimados a receber (data ex já passou): ${m(estimated)}`);
   lines.push("");
+
+  lines.push(...goalsMarkdown(r, opts.goals ?? [], hide));
 
   // Estratégia e simulação
   if (opts.simulation) {

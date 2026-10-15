@@ -2,6 +2,7 @@
 import type { Report } from "../shared";
 import { TASKS, buildContext, buildPrompt } from "../context";
 import { ensureParams, simQuotes } from "./simulacao";
+import { loadGoals } from "./metas";
 import { esc, openModal, privacy, toast } from "./ui";
 
 /** Copia texto; usa o método antigo quando a página não é HTTPS/localhost (ex.: celular pela rede). */
@@ -21,6 +22,7 @@ async function copyText(text: string, fallbackEl: HTMLTextAreaElement) {
 
 export async function openClaudeModal(r: Report) {
   const params = await ensureParams(r).catch(() => null);
+  const goalList = await loadGoals().catch(() => []);
   const hasSim = !!params && (params.contribution > 0 || params.sales.length > 0 || (params.buys?.length ?? 0) > 0 || params.allowSells);
   let task = TASKS[0]!;
   let hide = privacy.on;
@@ -52,7 +54,7 @@ export async function openClaudeModal(r: Report) {
   const text = $<HTMLTextAreaElement>("#c-text");
 
   const regen = () => {
-    const ctx = buildContext(r, { hideValues: hide, simulation: withSim && params ? { params, quotes: simQuotes() } : null });
+    const ctx = buildContext(r, { hideValues: hide, goals: goalList, simulation: withSim && params ? { params, quotes: simQuotes() } : null });
     text.value = buildPrompt(ctx, task.prompt);
     edited = false;
     sizeLabel();

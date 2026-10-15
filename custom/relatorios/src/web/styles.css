@@ -393,3 +393,28 @@ button.ghost.danger:hover { background: rgba(220, 53, 69, 0.15); border-color: v
 .sim-hint:empty { display: none; }
 .sim-hint.inline { display: inline; margin: 0; opacity: 0.85; }
 #cat-missing { margin: 10px 0 0; white-space: normal; }
+
+/* Metas de patrimônio */
+.goal { display: grid; gap: 16px; }
+.goal-top { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.goal-actions { display: flex; align-items: center; gap: 8px; }
+.goal-actions .small-btn { padding: 7px 12px; font-size: 13px; }
+.goal-actions .icon { min-width: 34px; height: 34px; font-size: 13px; color: var(--muted); }
+.goal-progress, .goal-mini { display: grid; gap: 6px; }
+.goal .track, .goal-mini .track { height: 10px; border-radius: 999px; background: var(--card-3); overflow: hidden; }
+.goal .track .fill, .goal-mini .track .fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #2aa8a6, var(--accent)); transform-origin: left; animation: grow-x 0.9s var(--ease) both; }
+.goal-mini .track { height: 6px; }
+@keyframes grow-x { from { transform: scaleX(0); } }
+.goal-chart { height: 280px; }
+.goal-stats .v { font-size: 18px; }
+.goals-summary { display: grid; gap: 14px; }
+.goal-mini + .goal-mini { padding-top: 12px; border-top: 1px solid var(--line); }
+.goal-form { display: grid; gap: 14px; }
+.goal-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.goal-form .field > input { height: 46px; box-sizing: border-box; }
+.goal-form .money-input input { font-size: 16px; padding: 12px 4px; }
+.goal-form .money-input.suffix input { text-align: right; }
+.goal-form .toggle { justify-self: start; }
+.goal-form .switch { margin-top: 0; }
+@media (max-width: 700px) { .goal-form-row { grid-template-columns: 1fr; } .goal-stats { grid-template-columns: 1fr 1fr; } }
+@media (prefers-reduced-motion: reduce) { .goal .track .fill, .goal-mini .track .fill { animation: none; } }

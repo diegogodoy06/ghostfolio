@@ -19,11 +19,12 @@ Extensão do Ghostfolio com o mesmo visual (barra superior com os links dele e m
 - **Simulação** (dentro de Carteira, seletor "Carteira atual | Simulação", como a conta simulação do TradeMap): metas por categoria, novo aporte e boletas de compra e venda (botões C/V em cada ativo ou "+ Boleta" para qualquer ticker, inclusive novos). O dinheiro que sobra das boletas é distribuído automaticamente, primeiro para o que está mais longe da meta; categorias acima da meta não recebem aporte (ou vendem o excedente, se ligado). Cada ativo mostra o que muda e como fica depois. A simulação salva aparece também no Resumo e é sempre recalculada com a carteira atual (fica no volume `relatorios-data`).
 
 - **Tudo / Carteira / Reserva** (seletor no topo): a reserva de emergência é o que tiver o marcador **Fundo de Emergência** no Ghostfolio (Portfólio → Atividades → editar → Marcadores). "Carteira" mostra tudo menos a reserva, e é a visão que a simulação e o MCP usam.
+- **Metas** (aba própria, independente da simulação): "quero ter R$ X até tal mês". Mostra progresso, se está no ritmo, o aporte mensal necessário, quando você chega lá com o aporte atual e um gráfico de projeção. Pode contar só a carteira ou carteira + reserva, e ser em valores de hoje (descontando inflação). Fica salvo em `relatorios-data`.
 - **Analisar com Claude** (botão no topo): monta um prompt com os dados da carteira (desempenho, risco, alocação, posições, proventos, metas e simulação) para uma análise escolhida (diagnóstico, estratégia, proventos, riscos ou pergunta livre). Copie e cole no Claude, ou baixe o .md. A opção "Só percentuais" tira valores em R$ e quantidades. O olho oculta os valores na tela (só neste aparelho).
 
 ### Claude Desktop / Claude Code (MCP "carteira")
 
-O container dos relatórios também tem um servidor MCP (só leitura), que funciona com a assinatura do Claude e dispensa a API. Ferramentas: `resumo_carteira`, `posicoes`, `proventos`, `desempenho` e `simular_aporte` (não salva nada). Ele também traz prompts prontos de análise.
+O container dos relatórios também tem um servidor MCP (só leitura), que funciona com a assinatura do Claude e dispensa a API. Ferramentas: `resumo_carteira`, `posicoes`, `proventos`, `desempenho`, `metas` e `simular_aporte` (não salva nada). Ele também traz prompts prontos de análise.
 
 Claude Desktop (Configurações → Desenvolvedor → Editar configuração, `claude_desktop_config.json`):
 

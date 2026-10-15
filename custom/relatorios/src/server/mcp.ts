@@ -12,6 +12,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { Report } from "../shared";
 import { TASKS, buildContext, buildPrompt } from "../context";
+import { type Goal, goalsMarkdown } from "../goals";
 import { type PeriodId, gainBetween, indexSeries, periodStart, ret, stats } from "../web/calc";
 import { type Quote, type SimulationParams, defaultParams, simulate } from "../sim-engine";
 import { buildReport, login } from "./report";
@@ -41,6 +42,14 @@ function savedSimulation(r: Report): SimulationParams | null {
     return s?.version === 1 ? { ...defaultParams(positionsOf(r)), ...s, buys: s.buys ?? [], autoAllocate: s.autoAllocate ?? true } : null;
   } catch {
     return null;
+  }
+}
+
+function savedGoals(): Goal[] {
+  try {
+    return (JSON.parse(fs.readFileSync(path.join(DATA_DIR, "metas.json"), "utf8")) as { goals?: Goal[] }).goals ?? [];
+  } catch {
+    return [];
   }
 }
 
@@ -80,7 +89,7 @@ server.registerTool(
     const r = await getReport();
     const params = savedSimulation(r);
     const quotes = params ? await quotesFor([...(params.buys ?? []).map((b) => b.ticker), ...Object.values(params.assetPlans).flatMap((p) => p.extra ?? [])], r) : {};
-    return text(buildContext(r, { hideValues: ocultar_valores, positions: incluir_posicoes, simulation: params ? { params, quotes } : null }));
+    return text(buildContext(r, { hideValues: ocultar_valores, positions: incluir_posicoes, goals: savedGoals(), simulation: params ? { params, quotes } : null }));
   },
 );
 
@@ -199,6 +208,19 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "metas",
+  {
+    title: "Metas de patrimônio",
+    description: "Metas do usuário (chegar a um patrimônio até uma data), com progresso, se está no ritmo, aporte mensal necessário e quando atinge com o aporte atual.",
+    inputSchema: { ocultar_valores: z.boolean().optional() },
+  },
+  async ({ ocultar_valores }) => {
+    const lines = goalsMarkdown(await getReport(), savedGoals(), ocultar_valores);
+    return text(lines.length ? lines.join("\n") : "Nenhuma meta cadastrada. Elas são criadas na aba Metas dos relatórios (porta 3334).");
+  },
+);
+
 // Prompts prontos (aparecem no menu de prompts do Claude Desktop).
 for (const t of TASKS.filter((x) => x.id !== "livre")) {
   server.registerPrompt(
@@ -208,7 +230,7 @@ for (const t of TASKS.filter((x) => x.id !== "livre")) {
       const r = await getReport();
       const params = savedSimulation(r);
       return {
-        messages: [{ role: "user" as const, content: { type: "text" as const, text: buildPrompt(buildContext(r, { simulation: params ? { params } : null }), t.prompt) } }],
+        messages: [{ role: "user" as const, content: { type: "text" as const, text: buildPrompt(buildContext(r, { goals: savedGoals(), simulation: params ? { params } : null }), t.prompt) } }],
       };
     },
   );

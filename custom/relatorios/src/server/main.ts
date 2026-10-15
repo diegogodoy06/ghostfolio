@@ -35,18 +35,20 @@ const cache = new Map<string, { at: number; data: unknown }>();
 // ---- Simulação: uma única, salva em /data (volume). Guarda a intenção, não o resultado. ----
 const DATA_DIR = process.env.DATA_DIR ?? "/data";
 const SIM_FILE = path.join(DATA_DIR, "simulacao.json");
-function readSimulation() {
+// Metas de patrimônio (valor + data), independentes da simulação.
+const GOALS_FILE = path.join(DATA_DIR, "metas.json");
+function readJson(file: string) {
   try {
-    return JSON.parse(fs.readFileSync(SIM_FILE, "utf8"));
+    return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
     return null;
   }
 }
-function writeSimulation(data: unknown) {
+function writeJson(file: string, data: unknown) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  const tmp = `${SIM_FILE}.tmp`;
+  const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, SIM_FILE); // gravação atômica
+  fs.renameSync(tmp, file); // gravação atômica
 }
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml" };
@@ -98,11 +100,21 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/api/simulation") {
       if (!authed(req)) return send(res, 401, { error: "login" });
-      if (req.method === "GET") return send(res, 200, readSimulation());
+      if (req.method === "GET") return send(res, 200, readJson(SIM_FILE));
       if (req.method === "PUT") {
         const body = await readBody(req, 200_000);
         if (!body || typeof body !== "object" || Array.isArray(body)) return send(res, 400, { error: "simulação inválida" });
-        writeSimulation({ ...body, updatedAt: new Date().toISOString() });
+        writeJson(SIM_FILE, { ...body, updatedAt: new Date().toISOString() });
+        return send(res, 200, { ok: true });
+      }
+    }
+    if (url.pathname === "/api/goals") {
+      if (!authed(req)) return send(res, 401, { error: "login" });
+      if (req.method === "GET") return send(res, 200, readJson(GOALS_FILE) ?? { version: 1, goals: [] });
+      if (req.method === "PUT") {
+        const body = await readBody(req, 100_000);
+        if (!body || !Array.isArray(body.goals)) return send(res, 400, { error: "metas inválidas" });
+        writeJson(GOALS_FILE, { version: 1, goals: body.goals, updatedAt: new Date().toISOString() });
         return send(res, 200, { ok: true });
       }
     }
