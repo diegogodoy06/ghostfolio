@@ -1,5 +1,5 @@
 /**
- * Categorização no estilo das corretoras brasileiras: Ações (por setor), FIIs (por tipo),
+ * Categorização no estilo das corretoras brasileiras: Ações (por setor), FIIs (por tipo), Fiagros,
  * ETFs, BDRs, Exterior, Tesouro Direto, Renda Fixa e Cripto.
  *
  * O Yahoo classifica FIIs e ETFs da B3 como "ação", então a categoria sai do ticker e do
@@ -18,7 +18,7 @@ export interface Profile {
   sectors?: { name: string; weight: number }[];
 }
 
-export const CATEGORY_ORDER = ["Ações", "FIIs", "ETFs", "BDRs", "Exterior", "Tesouro Direto", "Renda Fixa", "Cripto", "Outros"];
+export const CATEGORY_ORDER = ["Ações", "FIIs", "Fiagros", "ETFs", "BDRs", "Exterior", "Tesouro Direto", "Renda Fixa", "Cripto", "Outros"];
 
 // Tipo dos FIIs mais comuns; os demais saem do nome.
 const FII_TYPES: Record<string, string> = {
@@ -91,7 +91,11 @@ export function categorize(p: Profile): { category: string; subcategory: string 
       if (n >= 32 && n <= 39) return { category: "BDRs", subcategory: "BDRs" };
       if (/\betf\b|[íi]ndice|ishares|\btrend\b/i.test(name)) return { category: "ETFs", subcategory: /s&p|msci us|nasdaq|world/i.test(name) ? "Exterior" : "Brasil" };
       const isFii = /imobili|\bfii\b|fiagro|real estate|fdo inv|fundo de investimento/i.test(name) || (FII_TYPES[ticker] !== undefined);
-      if (n >= 11 && isFii) return { category: "FIIs", subcategory: fiiType(ticker, name) };
+      if (n >= 11 && isFii) {
+        const type = fiiType(ticker, name);
+        // Fiagro tem risco próprio (crédito do agro), por isso tem categoria e meta separadas.
+        return type === "Agro (Fiagro)" ? { category: "Fiagros", subcategory: "Fiagro" } : { category: "FIIs", subcategory: type };
+      }
       const sector = p.sectors?.[0]?.name;
       return { category: "Ações", subcategory: (sector && SECTOR_PT[sector]) || sector || "Outros" };
     }

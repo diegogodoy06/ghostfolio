@@ -12,7 +12,7 @@ import {
 } from "../sim-engine";
 import { colorOf, countUp, esc, money, openModal, parseNum, pct, privacy, qty, spinDonut, toast } from "./ui";
 
-const ALL_CATEGORIES = ["Ações", "FIIs", "ETFs", "BDRs", "Exterior", "Tesouro Direto", "Renda Fixa", "Cripto"];
+const ALL_CATEGORIES = ["Ações", "FIIs", "Fiagros", "ETFs", "BDRs", "Exterior", "Tesouro Direto", "Renda Fixa", "Cripto"];
 
 let params: SimulationParams | null = null;
 let loadingParams: Promise<SimulationParams> | null = null;

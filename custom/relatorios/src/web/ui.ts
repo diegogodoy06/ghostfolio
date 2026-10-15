@@ -2,7 +2,7 @@
 
 export const PALETTE = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#008300", "#e66767", "#898781"];
 export const CATEGORY_COLOR: Record<string, string> = {
-  Ações: PALETTE[0]!, FIIs: PALETTE[1]!, ETFs: PALETTE[2]!, BDRs: PALETTE[3]!, Exterior: PALETTE[4]!,
+  Ações: PALETTE[0]!, FIIs: PALETTE[1]!, Fiagros: PALETTE[2]!, ETFs: "#4bb4b0", BDRs: PALETTE[3]!, Exterior: PALETTE[4]!,
   "Tesouro Direto": PALETTE[5]!, "Renda Fixa": PALETTE[6]!, Cripto: PALETTE[7]!, Outros: PALETTE[8]!,
 };
 export const ACCENT = "#36cfcc";
