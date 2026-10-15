@@ -367,3 +367,11 @@ button.ghost.danger:hover { background: rgba(220, 53, 69, 0.15); border-color: v
 #privacy .ico { width: 18px; height: 18px; }
 .notice-card { border-color: rgba(240, 180, 41, 0.45); }
 .notice-card a { color: var(--accent); }
+
+/* ---------- Analisar com Claude ---------- */
+.claude-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; }
+.claude-btn .ico { width: 18px; height: 18px; color: var(--accent); }
+@media (max-width: 700px) { .claude-btn span:last-child { display: none; } .claude-btn { padding: 0 11px; } }
+.claude-opts { display: grid; gap: 2px; margin-bottom: 12px; }
+.prompt-box { width: 100%; min-height: 320px; max-height: 50vh; resize: vertical; background: var(--page); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); }
+.prompt-box:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }

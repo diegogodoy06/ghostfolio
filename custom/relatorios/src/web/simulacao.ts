@@ -40,6 +40,9 @@ export function ensureParams(r: Report): Promise<SimulationParams> {
   return loadingParams;
 }
 
+/** Cotações dos ativos novos já buscadas (usadas no contexto para o Claude). */
+export const simQuotes = () => quotes;
+
 export async function fetchQuote(ticker: string): Promise<Quote | null> {
   if (quotes[ticker]) return quotes[ticker]!;
   const res = await fetch(`/api/quote?t=${encodeURIComponent(ticker)}`);

@@ -18,6 +18,22 @@ Extensão do Ghostfolio com o mesmo visual (barra superior com os links dele e m
 - **Rentabilidade**: tabela mês a mês com % do CDI e estatísticas (volatilidade, maior queda, melhor/pior mês, Sharpe).
 - **Simulação** (dentro de Carteira, seletor "Carteira atual | Simulação", como a conta simulação do TradeMap): metas por categoria, novo aporte e boletas de compra e venda (botões C/V em cada ativo ou "+ Boleta" para qualquer ticker, inclusive novos). O dinheiro que sobra das boletas é distribuído automaticamente, primeiro para o que está mais longe da meta; categorias acima da meta não recebem aporte (ou vendem o excedente, se ligado). Cada ativo mostra o que muda e como fica depois. A simulação salva aparece também no Resumo e é sempre recalculada com a carteira atual (fica no volume `relatorios-data`).
 
+- **Analisar com Claude** (botão no topo): monta um prompt com os dados da carteira (desempenho, risco, alocação, posições, proventos, metas e simulação) para uma análise escolhida (diagnóstico, estratégia, proventos, riscos ou pergunta livre). Copie e cole no Claude, ou baixe o .md. A opção "Só percentuais" tira valores em R$ e quantidades. O olho oculta os valores na tela (só neste aparelho).
+
+### Claude Desktop / Claude Code (MCP "carteira")
+
+O container dos relatórios também tem um servidor MCP (só leitura), que funciona com a assinatura do Claude e dispensa a API. Ferramentas: `resumo_carteira`, `posicoes`, `proventos`, `desempenho` e `simular_aporte` (não salva nada). Ele também traz prompts prontos de análise.
+
+Claude Desktop (Configurações → Desenvolvedor → Editar configuração, `claude_desktop_config.json`):
+
+```json
+{ "mcpServers": { "carteira": { "command": "/usr/local/bin/docker", "args": ["exec", "-i", "ghostfolio-relatorios", "node", "mcp.js"] } } }
+```
+
+Claude Code: `claude mcp add carteira -- docker exec -i ghostfolio-relatorios node mcp.js`
+
+Os containers precisam estar rodando. Os dados vão para o Claude como em qualquer conversa.
+
 A rentabilidade é por cota (ponderada no tempo) e **inclui proventos**, como Rico e TradeMap; por isso difere do gráfico de Análise do Ghostfolio, que exclui proventos. Categorias podem ser ajustadas em `extratos/categorias.json`, por exemplo `{ "ITSA4": { "subcategoria": "Financeiro" } }`.
 
 ## Primeira vez

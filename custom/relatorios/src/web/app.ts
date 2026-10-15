@@ -6,6 +6,7 @@ import type { CategoryGroup, Position, Report } from "../shared";
 import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, real, rebased, ret, stats } from "./calc";
 import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, axisMoney, countUp, dateBR, esc, fadeFill, growBars, privacy, toast, money, openModal, pct, qty, skeleton, spinDonut, spct, tone } from "./ui";
 import { mountSimSummary, renderCarteiraSim } from "./simulacao";
+import { openClaudeModal } from "./claude";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
 Chart.defaults.color = "rgba(255,255,255,0.7)";
@@ -589,6 +590,10 @@ document.getElementById("account")!.addEventListener("change", (e) => {
   load();
 });
 document.getElementById("refresh")!.addEventListener("click", () => load(true));
+document.getElementById("claude")!.addEventListener("click", () => {
+  if (state.report && !state.report.ghostfolioRestricted) void openClaudeModal(state.report);
+  else toast("Carregue a carteira primeiro");
+});
 // Ocultar valores: só neste aparelho. (A "Vista do Apresentador" do Ghostfolio apaga os valores
 // na própria API, o que zeraria os relatórios; por isso este modo é independente.)
 privacy.on = saved("rel.privacy", "0") === "1";
