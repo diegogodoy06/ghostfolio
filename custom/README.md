@@ -10,7 +10,7 @@ Isso inicia o Ghostfolio oficial (app, Postgres e Redis), o serviço `ghostfolio
 
 ## Relatórios (localhost:3334)
 
-Extensão do Ghostfolio com o mesmo visual (barra superior com os links dele e menu lateral), com relatórios no estilo das corretoras brasileiras. Entre com o mesmo token de segurança do Ghostfolio (fica salvo no aparelho; no celular, use o IP do computador e "Adicionar à tela inicial").
+Extensão do Ghostfolio com o mesmo visual (barra superior com os links dele e menu lateral), com relatórios no estilo das corretoras brasileiras. Cada pessoa entra com o token de segurança do próprio usuário do Ghostfolio e vê só a própria carteira, com simulação e metas próprias; os extratos da B3 são do usuário da sincronização (sair/trocar de usuário fica no ícone de perfil) (fica salvo no aparelho; no celular, use o IP do computador e "Adicionar à tela inicial").
 
 - **Resumo**: patrimônio, valorização, proventos, desempenho contra CDI, Ibovespa, IPCA, IPCA + 6%, IFIX e dólar (nominal ou real), alocação e evolução do patrimônio.
 - **Carteira**: categorias (Ações por setor, FIIs por tipo, Fiagros, ETFs, Exterior, Tesouro, Renda Fixa) com cada ativo: quantidade, preço médio, preço, retorno, proventos, % da classe e % da carteira.

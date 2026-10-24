@@ -1,6 +1,6 @@
 /**
- * Servidor dos relatórios. Acesso protegido pelo mesmo token de segurança do Ghostfolio:
- * informado uma vez por aparelho, vira um cookie assinado (sobrevive a reinícios).
+ * Servidor dos relatórios. Cada pessoa entra com o próprio token de segurança do Ghostfolio
+ * (informado uma vez por aparelho, guardado cifrado num cookie) e vê só a própria carteira.
  *
  * Variáveis: GHOSTFOLIO_URL, GHOSTFOLIO_ACCESS_TOKEN, PORT (3334), EXTRATOS_DIR (/extratos).
  */
@@ -13,6 +13,7 @@ import { loadOverrides } from "./categories";
 import { quote } from "./quote";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./mcp";
+import { sameToken, seal, unseal, userDir, userIdOf } from "./users";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
@@ -31,7 +32,6 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-const SESSION = crypto.createHmac("sha256", TOKEN).update("relatorios-session-v1").digest("hex");
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest();
 // Token do MCP por HTTPS: derivado do token do Ghostfolio, mas não serve para entrar nele.
 // Mostrado com: docker exec ghostfolio-relatorios node server.js --mcp-token
@@ -46,15 +46,31 @@ const mcpAuthed = (req: http.IncomingMessage) => {
 };
 // Só para desenvolvimento local (instância temporária presa em 127.0.0.1). Nunca usar no compose.
 const DEV_NO_AUTH = process.env.DEV_NO_AUTH === "1";
-const authed = (req: http.IncomingMessage) => DEV_NO_AUTH || /(?:^|;\s*)rel_session=([a-f0-9]{64})/.exec(req.headers.cookie ?? "")?.[1] === SESSION;
+// Cookie da versão de um usuário só (HMAC fixo): continua valendo, como o dono.
+const LEGACY_SESSION = crypto.createHmac("sha256", TOKEN).update("relatorios-session-v1").digest("hex");
+
+interface Session {
+  token: string;
+  id: string;
+  /** Usuário da sincronização (pode enviar extratos). */
+  owner: boolean;
+  dir: string;
+}
+async function session(req: http.IncomingMessage): Promise<Session | null> {
+  const cookie = /(?:^|;\s*)rel_session=([\w-]+)/.exec(req.headers.cookie ?? "")?.[1];
+  const token = DEV_NO_AUTH || cookie === LEGACY_SESSION ? TOKEN : cookie ? unseal(cookie) : null;
+  if (!token) return null;
+  try {
+    const id = await userIdOf(token);
+    const owner = sameToken(token, TOKEN);
+    return { token, id, owner, dir: userDir(id, owner) };
+  } catch {
+    return null;
+  }
+}
 
 const cache = new Map<string, { at: number; data: unknown }>();
 
-// ---- Simulação: uma única, salva em /data (volume). Guarda a intenção, não o resultado. ----
-const DATA_DIR = process.env.DATA_DIR ?? "/data";
-const SIM_FILE = path.join(DATA_DIR, "simulacao.json");
-// Metas de patrimônio (valor + data), independentes da simulação.
-const GOALS_FILE = path.join(DATA_DIR, "metas.json");
 function readJson(file: string) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -63,7 +79,7 @@ function readJson(file: string) {
   }
 }
 function writeJson(file: string, data: unknown) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
   fs.renameSync(tmp, file); // gravação atômica
@@ -116,56 +132,63 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/api/login" && req.method === "POST") {
       const { token } = await readBody(req);
-      // Comparação em tempo constante sobre os hashes.
-      if (typeof token !== "string" || !crypto.timingSafeEqual(sha(token.trim()), sha(TOKEN))) return send(res, 401, { error: "Token inválido" });
+      const t = typeof token === "string" ? token.trim() : "";
+      try {
+        if (!t || t.length > 512) throw new Error("vazio");
+        await userIdOf(t); // o próprio Ghostfolio valida o token
+      } catch {
+        await new Promise((r) => setTimeout(r, 800)); // freia tentativas em série
+        return send(res, 401, { error: "Token inválido" });
+      }
       // Atrás de um proxy HTTPS o cookie só trafega cifrado.
       const secure = req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
-      return send(res, 200, { ok: true }, { "set-cookie": `rel_session=${SESSION}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict${secure}` });
+      return send(res, 200, { ok: true }, { "set-cookie": `rel_session=${seal(t)}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict${secure}` });
     }
     if (url.pathname === "/api/logout" && req.method === "POST") {
       return send(res, 200, { ok: true }, { "set-cookie": "rel_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict" });
     }
-    if (url.pathname === "/api/report") {
-      if (!authed(req)) return send(res, 401, { error: "login" });
+    const s = url.pathname.startsWith("/api/") ? await session(req) : null;
+    if (url.pathname.startsWith("/api/") && !s) return send(res, 401, { error: "login" });
+    if (url.pathname === "/api/report" && s) {
       const accounts = (url.searchParams.get("accounts") ?? "").split(",").filter(Boolean).sort();
       const scope: Scope = SCOPES.find((x) => x === url.searchParams.get("scope")) ?? "tudo";
-      const key = `${scope}|${accounts.join(",")}`;
+      const key = `${s.id}|${scope}|${accounts.join(",")}`;
       const hit = cache.get(key);
       if (hit && Date.now() - hit.at < CACHE_MS && url.searchParams.get("refresh") !== "1") return send(res, 200, hit.data);
       loadOverrides(OVERRIDES);
-      const data = await buildReport(await login(BASE_URL, TOKEN), accounts, scope);
+      const data = { ...(await buildReport(await login(BASE_URL, s.token), accounts, scope)), owner: s.owner };
       cache.set(key, { at: Date.now(), data });
       return send(res, 200, data);
     }
     if (url.pathname === "/api/quote") {
-      if (!authed(req)) return send(res, 401, { error: "login" });
       const t = (url.searchParams.get("t") ?? "").toUpperCase().replace(/[^A-Z0-9.^-]/g, "");
       if (!t) return send(res, 400, { error: "ticker" });
       return send(res, 200, await quote(t));
     }
-    if (url.pathname === "/api/simulation") {
-      if (!authed(req)) return send(res, 401, { error: "login" });
-      if (req.method === "GET") return send(res, 200, readJson(SIM_FILE));
+    if (url.pathname === "/api/simulation" && s) {
+      const file = path.join(s.dir, "simulacao.json");
+      if (req.method === "GET") return send(res, 200, readJson(file));
       if (req.method === "PUT") {
         const body = await readBody(req, 200_000);
         if (!body || typeof body !== "object" || Array.isArray(body)) return send(res, 400, { error: "simulação inválida" });
-        writeJson(SIM_FILE, { ...body, updatedAt: new Date().toISOString() });
+        writeJson(file, { ...body, updatedAt: new Date().toISOString() });
         return send(res, 200, { ok: true });
       }
     }
-    if (url.pathname === "/api/goals") {
-      if (!authed(req)) return send(res, 401, { error: "login" });
-      if (req.method === "GET") return send(res, 200, readJson(GOALS_FILE) ?? { version: 1, goals: [] });
+    if (url.pathname === "/api/goals" && s) {
+      const file = path.join(s.dir, "metas.json");
+      if (req.method === "GET") return send(res, 200, readJson(file) ?? { version: 1, goals: [] });
       if (req.method === "PUT") {
         const body = await readBody(req, 100_000);
         if (!body || !Array.isArray(body.goals)) return send(res, 400, { error: "metas inválidas" });
-        writeJson(GOALS_FILE, { version: 1, goals: body.goals, updatedAt: new Date().toISOString() });
+        writeJson(file, { version: 1, goals: body.goals, updatedAt: new Date().toISOString() });
         return send(res, 200, { ok: true });
       }
     }
     // Extratos da B3: listar, enviar e remover arquivos da pasta lida pela sincronização.
-    if (url.pathname === "/api/extratos") {
-      if (!authed(req)) return send(res, 401, { error: "login" });
+    if (url.pathname === "/api/extratos" && s) {
+      // A sincronização importa os extratos na conta do dono; só ele mexe na pasta.
+      if (!s.owner) return send(res, 403, { error: "Os extratos são importados na conta do usuário da sincronização." });
       if (req.method === "GET") {
         const files = fs.existsSync(EXTRATOS_DIR)
           ? fs

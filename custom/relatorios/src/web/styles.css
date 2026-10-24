@@ -42,10 +42,13 @@ code { font-size: 0.9em; background: var(--card-2); padding: 1px 6px; border-rad
 .gf-links a { color: var(--ink); text-decoration: none; font-size: 14px; font-weight: 500; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: background 0.15s; }
 .gf-links a:hover { background: var(--card-2); }
 .gf-links a.active { font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
-.gf-menu-btn { display: none; background: none; border: 0; padding: 10px 14px; cursor: pointer; color: var(--ink); }
+.gf-menu-btn { display: block; background: none; border: 0; padding: 10px 14px; cursor: pointer; color: var(--ink); }
 .gf-menu { position: absolute; top: 60px; right: 10px; background: #2a2a2a; border: 1px solid var(--line); border-radius: 12px; padding: 6px; display: grid; min-width: 210px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); animation: rise 0.18s var(--ease) both; }
 .gf-menu a { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 8px; color: var(--ink); text-decoration: none; cursor: pointer; }
 .gf-menu a:hover { background: var(--card-2); }
+.gf-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; width: auto; }
+/* No computador os links já estão na barra: o menu do perfil mostra só "Sair". */
+@media (min-width: 901px) { .gf-menu a[data-gf], .gf-menu hr { display: none; } }
 .ico { display: inline-block; width: 20px; height: 20px; flex: none; background-color: currentColor; -webkit-mask: var(--icon) no-repeat center / contain; mask: var(--icon) no-repeat center / contain; }
 
 /* ---------- Menu lateral (abas verticais do Ghostfolio) ---------- */

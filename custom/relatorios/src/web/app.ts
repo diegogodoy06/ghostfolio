@@ -100,6 +100,8 @@ async function fetchReport(refresh: boolean) {
     return;
   }
   state.report = await res.json();
+  // Extratos da B3 só para o usuário da sincronização.
+  document.getElementById("extratos")!.hidden = state.report!.owner === false;
   fillAccounts();
   render();
 }
@@ -652,6 +654,11 @@ document.querySelectorAll<HTMLButtonElement>("#scope button").forEach((b) =>
 );
 document.getElementById("refresh")!.addEventListener("click", () => load(true));
 document.getElementById("extratos")!.addEventListener("click", openExtratosModal);
+document.getElementById("logout")!.addEventListener("click", async (e) => {
+  e.preventDefault();
+  await fetch("/api/logout", { method: "POST" });
+  location.reload(); // limpa simulação e metas carregadas do usuário anterior
+});
 document.getElementById("claude")!.addEventListener("click", () => {
   if (state.report && !state.report.ghostfolioRestricted) void openClaudeModal(state.report);
   else toast("Carregue a carteira primeiro");

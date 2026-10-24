@@ -17,10 +17,10 @@ import { type Quote, type SimulationParams, defaultParams, simulate } from "../s
 import { buildReport, login } from "./report";
 import { loadOverrides } from "./categories";
 import { quote } from "./quote";
+import { ownerDir } from "./users";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
-const DATA_DIR = process.env.DATA_DIR ?? "/data";
 const OVERRIDES = path.join(process.env.EXTRATOS_DIR ?? "/extratos", "categorias.json");
 
 let cached: { at: number; report: Report } | null = null;
@@ -33,18 +33,19 @@ async function getReport(): Promise<Report> {
   return report;
 }
 
-function savedSimulation(r: Report): SimulationParams | null {
+// O MCP fala pelo usuário da sincronização (GHOSTFOLIO_ACCESS_TOKEN).
+async function savedSimulation(r: Report): Promise<SimulationParams | null> {
   try {
-    const s = JSON.parse(fs.readFileSync(path.join(DATA_DIR, "simulacao.json"), "utf8")) as SimulationParams;
+    const s = JSON.parse(fs.readFileSync(path.join(await ownerDir(), "simulacao.json"), "utf8")) as SimulationParams;
     return s?.version === 1 ? { ...defaultParams(positionsOf(r)), ...s, buys: s.buys ?? [], autoAllocate: s.autoAllocate ?? true } : null;
   } catch {
     return null;
   }
 }
 
-function savedGoals(): Goal[] {
+async function savedGoals(): Promise<Goal[]> {
   try {
-    return (JSON.parse(fs.readFileSync(path.join(DATA_DIR, "metas.json"), "utf8")) as { goals?: Goal[] }).goals ?? [];
+    return (JSON.parse(fs.readFileSync(path.join(await ownerDir(), "metas.json"), "utf8")) as { goals?: Goal[] }).goals ?? [];
   } catch {
     return [];
   }
@@ -85,9 +86,9 @@ server.registerTool(
   },
   async ({ ocultar_valores, incluir_posicoes }) => {
     const r = await getReport();
-    const params = savedSimulation(r);
+    const params = await savedSimulation(r);
     const quotes = params ? await quotesFor([...(params.buys ?? []).map((b) => b.ticker), ...Object.values(params.assetPlans).flatMap((p) => p.extra ?? [])], r) : {};
-    return text(buildContext(r, { hideValues: ocultar_valores, positions: incluir_posicoes, goals: savedGoals(), simulation: params ? { params, quotes } : null }));
+    return text(buildContext(r, { hideValues: ocultar_valores, positions: incluir_posicoes, goals: await savedGoals(), simulation: params ? { params, quotes } : null }));
   },
 );
 
@@ -183,7 +184,7 @@ server.registerTool(
   async ({ aporte, metas, vender, rebalancear_vendendo }) => {
     const r = await getReport();
     const positions = positionsOf(r);
-    const base = savedSimulation(r) ?? defaultParams(positions);
+    const base = await savedSimulation(r) ?? defaultParams(positions);
     const params: SimulationParams = {
       ...base,
       targets: metas ?? base.targets,
@@ -214,7 +215,7 @@ server.registerTool(
     inputSchema: { ocultar_valores: z.boolean().optional() },
   },
   async ({ ocultar_valores }) => {
-    const lines = goalsMarkdown(await getReport(), savedGoals(), ocultar_valores);
+    const lines = goalsMarkdown(await getReport(), await savedGoals(), ocultar_valores);
     return text(lines.length ? lines.join("\n") : "Nenhuma meta cadastrada. Elas são criadas na aba Metas dos relatórios (porta 3334).");
   },
 );
@@ -226,9 +227,9 @@ for (const t of TASKS.filter((x) => x.id !== "livre")) {
     { title: t.label, description: `${t.label} da carteira com os dados atuais` },
     async () => {
       const r = await getReport();
-      const params = savedSimulation(r);
+      const params = await savedSimulation(r);
       return {
-        messages: [{ role: "user" as const, content: { type: "text" as const, text: buildPrompt(buildContext(r, { goals: savedGoals(), simulation: params ? { params } : null }), t.prompt) } }],
+        messages: [{ role: "user" as const, content: { type: "text" as const, text: buildPrompt(buildContext(r, { goals: await savedGoals(), simulation: params ? { params } : null }), t.prompt) } }],
       };
     },
   );

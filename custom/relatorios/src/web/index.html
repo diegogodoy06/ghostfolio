@@ -29,6 +29,8 @@
         <a data-gf="portfolio"><span class="ico" style="--icon: url(icons/pie-chart-outline.svg)"></span>Portefólio</a>
         <a data-gf="accounts"><span class="ico" style="--icon: url(icons/wallet-outline.svg)"></span>Contas</a>
         <a data-gf="resources"><span class="ico" style="--icon: url(icons/open-outline.svg)"></span>Recursos</a>
+        <hr />
+        <a href="#" id="logout"><span class="ico" style="--icon: url(icons/log-out-outline.svg)"></span>Sair / trocar de usuário</a>
       </div>
     </header>
 
@@ -63,7 +65,7 @@
     <template id="login-tpl">
       <form class="card login">
         <h2>Entrar</h2>
-        <p class="muted">Use o mesmo token de segurança do Ghostfolio. Ele fica salvo neste aparelho.</p>
+        <p class="muted">Use o token de segurança do <b>seu</b> usuário no Ghostfolio. Cada usuário vê só a própria carteira, com simulação e metas próprias. O acesso fica salvo neste aparelho.</p>
         <input name="token" type="password" autocomplete="current-password" placeholder="Token de segurança" required />
         <button type="submit" class="primary">Entrar</button>
         <p class="error" hidden></p>

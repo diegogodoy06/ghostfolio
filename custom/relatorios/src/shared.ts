@@ -67,4 +67,6 @@ export interface Report {
   scope: "tudo" | "carteira" | "reserva";
   /** Reserva de emergência: operações com o marcador "Fundo de Emergência" no Ghostfolio. */
   reserve: { value: number; tagged: boolean };
+  /** Quem está vendo é o usuário da sincronização (pode enviar extratos). */
+  owner?: boolean;
 }
