@@ -86,7 +86,7 @@ function writeJson(file: string, data: unknown) {
   fs.renameSync(tmp, file); // gravação atômica
 }
 
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml" };
+const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png", ".webmanifest": "application/manifest+json" };
 
 function send(res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
   const json = typeof body !== "string";
@@ -249,7 +249,7 @@ const server = http.createServer(async (req, res) => {
     // Só arquivos de public/ (e public/fonts/, public/icons/); nada de "..".
     const rel = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
     const file = path.basename(rel);
-    const full = path.join(PUBLIC_DIR, /^(fonts\/[\w.-]+\.woff2|icons\/[\w.-]+\.svg)$/.test(rel) ? rel : file);
+    const full = path.join(PUBLIC_DIR, /^(fonts\/[\w.-]+\.woff2|icons\/[\w.-]+\.(?:svg|png))$/.test(rel) ? rel : file);
     if (fs.existsSync(full)) {
       res.writeHead(200, {
         "content-type": TYPES[path.extname(full)] ?? "application/octet-stream",

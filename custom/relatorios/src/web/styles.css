@@ -33,7 +33,7 @@ button, input, select { font: inherit; color: inherit; }
 code { font-size: 0.9em; background: var(--card-2); padding: 1px 6px; border-radius: 6px; }
 
 /* ---------- Barra superior (igual ao Ghostfolio) ---------- */
-.gf-toolbar { position: sticky; top: 0; z-index: 20; height: 64px; display: flex; align-items: center; background: var(--page); border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top); }
+.gf-toolbar { position: sticky; top: 0; z-index: 20; height: calc(64px + env(safe-area-inset-top)); display: flex; align-items: center; background: var(--page); border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top); }
 .gf-logo { width: 14rem; height: 100%; display: flex; align-items: center; gap: 6px; padding: 0 16px; color: var(--ink); text-decoration: none; cursor: pointer; background: rgba(255, 255, 255, 0.02); }
 .gf-logo .logo { width: 1.5rem; height: 1.5rem; margin-top: -2px; background-color: currentColor; -webkit-mask: url("icons/ghost.svg") no-repeat center / contain; mask: url("icons/ghost.svg") no-repeat center / contain; }
 .gf-logo .label { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.03em; }
@@ -107,8 +107,9 @@ main.enter > *:nth-child(n + 5) { animation-delay: 0.16s; }
 .card h3 { font-size: 14px; color: var(--ink-2); margin: 18px 0 10px; font-weight: 600; }
 .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
 .split-1-2 { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+.split > *, .split-1-2 > *, .sim-layout > *, .sim-summary-grid > * { min-width: 0; }
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
-@media (max-width: 1100px) { .split-1-2 { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .split-1-2 { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 900px) { .split { grid-template-columns: 1fr; } .kpis { grid-template-columns: 1fr 1fr; gap: 12px; } }
 @media (max-width: 520px) { body { font-size: 14px; } .card { padding: 16px; } .kpis { gap: 10px; } }
 
@@ -183,9 +184,15 @@ td .nm { color: var(--muted); font-size: 12px; max-width: 240px; overflow: hidde
 .pos-cards { display: none; gap: 10px; }
 .pos { background: var(--card-2); border-radius: 12px; padding: 14px; cursor: pointer; transition: background 0.15s; }
 .pos:active { background: var(--card-3); }
-.pos .head { display: flex; justify-content: space-between; font-weight: 700; }
-.pos .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; font-size: 13px; }
-.pos .grid .l { color: var(--muted); font-size: 11px; }
+.pos { display: grid; gap: 3px; padding: 11px 13px; }
+.pos > div { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.pos .row1 { font-weight: 700; font-size: 15px; }
+.pos .row1 .v, .pos .row2 > span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pos .row2 { font-size: 12.5px; color: var(--ink-2); }
+.pos .row2 > span:first-child, .pos .row3 > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos .row2 > span:last-child { font-weight: 700; }
+.pos .row3 { font-size: 11.5px; color: var(--muted); }
+.pos .row3 .sim-hint { margin: 0; }
 @media (max-width: 760px) { .pos-table { display: none; } .pos-cards { display: grid; } }
 
 .months td, .months th { padding: 9px 7px; font-size: 13px; }
@@ -213,9 +220,9 @@ td .nm { color: var(--muted); font-size: 12px; max-width: 240px; overflow: hidde
 .skeleton.rows.tall { height: 340px; }
 
 /* ---------- Modal ---------- */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0); display: grid; place-items: center; padding: 20px; z-index: 50; transition: background 0.2s; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0); display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; place-items: center; padding: 20px; z-index: 50; transition: background 0.2s; }
 .modal-backdrop.open { background: rgba(0, 0, 0, 0.6); }
-.modal { background: #222; border: 1px solid var(--line); border-radius: 18px; width: min(560px, 100%); max-height: min(88vh, 900px); display: flex; flex-direction: column; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5); opacity: 0; transform: translateY(14px) scale(0.97); transition: opacity 0.2s var(--ease), transform 0.2s var(--ease); }
+.modal { background: #222; border: 1px solid var(--line); border-radius: 18px; min-width: 0; width: min(560px, 100%); max-height: min(88vh, 900px); display: flex; flex-direction: column; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5); opacity: 0; transform: translateY(14px) scale(0.97); transition: opacity 0.2s var(--ease), transform 0.2s var(--ease); }
 .modal.wide { width: min(880px, 100%); }
 .modal-backdrop.open .modal { opacity: 1; transform: none; }
 .modal-backdrop.closing .modal { opacity: 0; transform: translateY(8px) scale(0.98); }
@@ -224,7 +231,7 @@ td .nm { color: var(--muted); font-size: 12px; max-width: 240px; overflow: hidde
 .modal-body { padding: 10px 20px 20px; overflow: auto; }
 @media (max-width: 520px) { .modal-backdrop { place-items: end center; padding: 0; } .modal { border-radius: 18px 18px 0 0; width: 100%; max-height: 92vh; transform: translateY(40px); } }
 
-.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); background: #2a2a2a; border: 1px solid var(--line); padding: 10px 16px; border-radius: 999px; font-size: 13px; opacity: 0; transition: opacity 0.25s, transform 0.25s var(--ease); z-index: 60; }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); max-width: calc(100vw - 32px); text-align: center; transform: translate(-50%, 20px); background: #2a2a2a; border: 1px solid var(--line); padding: 10px 16px; border-radius: 999px; font-size: 13px; opacity: 0; transition: opacity 0.25s, transform 0.25s var(--ease); z-index: 60; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -441,3 +448,161 @@ button.ghost.danger:hover { background: rgba(220, 53, 69, 0.15); border-color: v
 @media (max-width: 520px) { .x-row { grid-template-columns: minmax(0, 1fr) 34px; } .x-row .muted { grid-column: 1; grid-row: 2; } .x-row .icon { grid-row: 1 / span 2; grid-column: 2; } }
 .x-sync { margin: 12px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--card-2); }
 button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Explicação recolhível (ex.: diferença para o percentual do Ghostfolio). */
+details.why { margin-top: 8px; }
+details.why > summary { cursor: pointer; color: var(--accent); font-weight: 600; list-style: none; }
+details.why > summary::-webkit-details-marker { display: none; }
+details.why > summary::after { content: " ›"; }
+details.why[open] > summary::after { content: " ⌄"; }
+.months-m { display: none; }
+.more-btn { display: none; }
+
+/* =====================================================================================
+   Celular (até 575px): app de uma mão só. Ações na barra fixa, filtros numa linha,
+   tabelas viram cartões, chips rolam de lado e alvos de toque de 40px+.
+   ===================================================================================== */
+html { -webkit-tap-highlight-color: transparent; }
+button, a, summary, .chip, .pos { touch-action: manipulation; }
+
+@media (max-width: 575.98px) {
+  /* Barra superior: logo + ações + perfil. */
+  .gf-toolbar { height: calc(56px + env(safe-area-inset-top)); }
+  .gf-menu { top: calc(52px + env(safe-area-inset-top)); }
+  .gf-logo { padding: 0 12px; }
+  .gf-logo .label { font-size: 1.25rem; }
+  .gf-menu-btn { padding: 8px 10px 8px 4px; }
+  .gf-toolbar .actions-group { display: flex; gap: 2px; align-items: center; }
+  .gf-toolbar .actions-group button { background: none; border: 0; min-width: 40px; width: 40px; height: 40px; padding: 0; border-radius: 10px; display: grid; place-items: center; color: var(--ink); }
+  .gf-toolbar .actions-group button:active { background: var(--card-3); }
+  .gf-toolbar .actions-group .ico { width: 21px; height: 21px; }
+  .gf-toolbar .actions-group .claude-btn .ico { color: var(--accent); }
+  .gf-toolbar #privacy[aria-pressed="true"] { background: var(--accent-wash); color: var(--accent); }
+  .gf-menu { top: 52px; }
+  .side-tabs { top: auto; }
+
+  /* Cabeçalho: título e, embaixo, filtros numa única linha. */
+  .page-head { padding: 14px var(--gutter) 0; gap: 10px; }
+  .page-head h1 { font-size: 22px; width: 100%; }
+  .top-actions { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); gap: 8px; }
+  .toggle.scope { display: grid; grid-template-columns: repeat(3, 1fr); height: 38px; }
+  .toggle.scope button { padding: 0 4px; font-size: 13px; }
+  select#account { min-width: 0; width: 100%; height: 38px; font-size: 14px; padding: 0 30px 0 12px; background-position: right 10px center; text-overflow: ellipsis; }
+  main { padding: 14px var(--gutter) 28px; gap: 14px; }
+
+  /* Cartões e números. */
+  .card { padding: 15px; border-radius: 13px; }
+  .card h2 { font-size: 16px; margin-bottom: 12px; }
+  .kpis { gap: 10px; }
+  .kpi .label { font-size: 12px; }
+  .kpi .value { font-size: 20px; margin-top: 4px; }
+  .kpi .sub { font-size: 12px; }
+  .stats { gap: 10px; }
+  .stat { padding: 12px; }
+  .stat .v { font-size: 17px; }
+  .note { font-size: 12.5px; }
+  .legend .li { font-size: 13.5px; gap: 10px; }
+
+  /* Chips de período e de referências: uma linha que rola de lado. */
+  .chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 -15px 12px; padding: 0 15px 2px; scrollbar-width: none; scroll-snap-type: x proximity; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; scroll-snap-align: start; padding: 8px 14px; }
+  .bars .item { grid-template-columns: 82px 1fr 64px; gap: 10px; font-size: 13.5px; }
+
+  /* Gráficos. */
+  .chart-box { height: 240px; }
+  .chart-box.donut { height: 210px; }
+  .goal-chart { height: 240px; }
+
+  /* Categorias da carteira (e da simulação): anel, nome e valor; detalhes embaixo. */
+  details.cat > summary { padding: 13px 14px; gap: 10px; grid-template-columns: 44px minmax(0, 1fr) auto 12px; }
+  details.cat > summary .ring { width: 44px; height: 44px; font-size: 11px; }
+  details.cat > summary .t { font-size: 15.5px; }
+  details.cat .body { padding: 0 14px 14px; }
+  .sim-hint { white-space: normal; }
+  .sim-hint.inline { display: block; margin-top: 2px; }
+  details.sim-cat > summary { grid-template-columns: 44px minmax(0, 1fr) 12px; }
+  details.sim-cat > summary .ring { grid-column: 1; grid-row: 1 / span 2; }
+  details.sim-cat > summary > span:nth-child(2) { grid-column: 2; grid-row: 1; }
+  details.sim-cat > summary .badge { grid-column: 2; grid-row: 2; justify-self: start; }
+  details.sim-cat > summary .chev { grid-column: 3; grid-row: 1 / span 2; }
+  .plan-bar .toggle { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+  .plan-bar .toggle button { padding: 7px 4px; }
+  .plan-bar > button { width: 100%; }
+
+  /* Tabela da simulação vira cartões. */
+  .scroll { margin: 0; padding: 0; }
+  .sim-table thead { display: none; }
+  .sim-table, .sim-table tbody { display: block; }
+  .sim-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .sim-table tr:last-child { border-bottom: 0; }
+  .sim-table td { display: block; padding: 0; border: 0; text-align: left; white-space: normal; font-size: 13px; }
+  .sim-table td[data-l]::before { content: attr(data-l) " "; color: var(--muted); font-size: 11.5px; }
+  .sim-table .c-asset { grid-column: 1; grid-row: 1; }
+  .sim-table .c-trade { grid-column: 2; grid-row: 1; text-align: right; }
+  .sim-table .c-sim { grid-column: 1; grid-row: 2; }
+  .sim-table .c-sim::before { display: none; }
+  .sim-table .c-after { grid-column: 2; grid-row: 2; text-align: right; }
+  .sim-table .c-qty, .sim-table .c-price, .sim-table .c-now { display: none; }
+  .sim-table .c-pct { grid-column: 1; grid-row: 3; color: var(--ink-2); }
+  .sim-table .c-w { grid-column: 2; grid-row: 3; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+  .sim-table .c-w::before { white-space: nowrap; }
+  .sim-table .pct-input.slim { width: 84px; margin: 0; }
+  .sim-table button.mini { width: 38px; height: 34px; margin-left: 6px; }
+  .sim-table tr.is-sold td:not(:first-child):not(:last-child) { opacity: 0.55; }
+
+  /* Simulação: controles. */
+  .sim-buttons { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .sim-buttons > span, .sim-buttons > .muted, .sim-buttons > .primary:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .modal .chips { margin: 0 -16px 12px; padding: 0 16px 2px; }
+  .order { padding: 7px 7px 7px 12px; }
+  .strategy-row { padding: 8px 0; }
+  .mode-bar { gap: 8px; }
+  .mode-bar .toggle { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  .mode-bar > p { margin: 0; }
+  .sim-cta > button, .sim-summary .row-between > button, .goals-summary .row-between > button { width: 100%; }
+
+  /* Proventos: últimos lançamentos em lista. */
+  .inc-table thead { display: none; }
+  .inc-table, .inc-table tbody { display: block; }
+  .inc-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .inc-table td { padding: 0; border: 0; text-align: left; white-space: nowrap; }
+  .inc-table .c-tk { grid-column: 1; grid-row: 1; font-weight: 700; }
+  .inc-table .c-val { grid-column: 2; grid-row: 1; text-align: right; font-weight: 700; }
+  .inc-table .c-date { grid-column: 1; grid-row: 2; font-size: 12px; color: var(--muted); }
+  .inc-table .c-type { grid-column: 2; grid-row: 2; font-size: 12px; color: var(--muted); text-align: right; }
+  .inc-table:not(.all) tr:nth-child(n + 13) { display: none; }
+  .more-btn { display: block; width: 100%; margin-top: 12px; }
+
+  /* Rentabilidade mensal: grade por ano em vez da tabela larga. */
+  .months-wrap { display: none; }
+  .months-m { display: grid; gap: 16px; }
+  .my-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 15px; }
+  .my-head span { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .my-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .mc { display: grid; gap: 1px; padding: 7px 8px; border-radius: 9px; background: var(--card-2); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; }
+  .mc.pos { background: rgba(40, 167, 69, 0.1); }
+  .mc.neg { background: rgba(220, 53, 69, 0.1); }
+  .mc .mn { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .mc .c { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+
+  /* Metas. */
+  .goal { gap: 12px; }
+  .goal-stats .v { font-size: 16px; }
+  .goal-actions { width: 100%; }
+  .goal-actions .badge { margin-right: auto; }
+
+  /* Janelas: folha que sobe de baixo, com cabeçalho fixo e espaço para a barra de gestos. */
+  .modal-head { position: sticky; top: 0; background: #222; z-index: 1; padding: 16px 16px 8px; border-radius: 18px 18px 0 0; }
+  .modal-head::before { content: ""; position: absolute; top: 6px; left: 50%; width: 38px; height: 4px; margin-left: -19px; border-radius: 2px; background: rgba(255, 255, 255, 0.22); }
+  .modal-body { padding: 6px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .goal-form-row { grid-template-columns: 1fr; }
+  .prompt-box { min-height: 220px; }
+
+  /* Campos com 16px: o iPhone não dá zoom ao tocar. */
+  input, select, textarea { font-size: 16px; }
+  .money-input input { font-size: 18px; }
+
+  /* Avisos acima da barra de abas. */
+  .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
+}

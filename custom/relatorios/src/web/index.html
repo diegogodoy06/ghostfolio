@@ -9,6 +9,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Relatórios · Ghostfolio</title>
     <link rel="icon" href="icons/ghost.svg" />
+    <!-- App instalável: "Adicionar à tela inicial" abre em tela cheia, sem a barra do navegador. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Carteira" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -52,10 +57,13 @@
               <button data-scope="reserva" title="Só o que tem o marcador Fundo de Emergência">Reserva</button>
             </div>
             <select id="account" aria-label="Conta"></select>
-            <button id="claude" class="ghost claude-btn" title="Gerar prompt com os dados da carteira para o Claude"><span class="ico" style="--icon: url(icons/sparkles-outline.svg)"></span><span>Analisar com Claude</span></button>
-            <button id="extratos" class="icon" aria-label="Extratos da B3" title="Enviar extratos da B3"><span class="ico" style="--icon: url(icons/cloud-upload-outline.svg)"></span></button>
-            <button id="privacy" class="icon" aria-pressed="false" aria-label="Ocultar valores"><span class="ico" style="--icon: url(icons/eye-outline.svg)"></span></button>
-            <button id="refresh" class="icon" title="Atualizar" aria-label="Atualizar">↻</button>
+            <!-- No celular estes botões sobem para a barra superior (fixa), ao lado do perfil. -->
+            <div class="actions-group" id="actions">
+              <button id="claude" class="ghost claude-btn" title="Gerar prompt com os dados da carteira para o Claude" aria-label="Analisar com Claude"><span class="ico" style="--icon: url(icons/sparkles-outline.svg)"></span><span>Analisar com Claude</span></button>
+              <button id="extratos" class="icon" aria-label="Extratos da B3" title="Enviar extratos da B3"><span class="ico" style="--icon: url(icons/cloud-upload-outline.svg)"></span></button>
+              <button id="privacy" class="icon" aria-pressed="false" aria-label="Ocultar valores"><span class="ico" style="--icon: url(icons/eye-outline.svg)"></span></button>
+              <button id="refresh" class="icon" title="Atualizar" aria-label="Atualizar"><span class="ico" style="--icon: url(icons/refresh-outline.svg)"></span></button>
+            </div>
           </div>
         </div>
         <main id="main"></main>

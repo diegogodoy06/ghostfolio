@@ -3,7 +3,7 @@ import { Chart } from "chart.js";
 import type { Report } from "../shared";
 import { type Goal, type GoalPlan, INFLATION, STATUS_LABEL, addMonths, futureValue, goalBaseValue as baseValue, monthKey, monthsBetween, planGoal } from "../goals";
 import { indexSeries, periodStart, ret } from "./calc";
-import { ACCENT, MONTHS, axisMoney, esc, fadeFill, money, openModal, parseNum, pct, toast } from "./ui";
+import { ACCENT, MONTHS, axisMoney, esc, fadeFill, money, openModal, parseNum, pct, toast, xTicks } from "./ui";
 
 let goals: Goal[] | null = null;
 let loading: Promise<Goal[]> | null = null;
@@ -146,7 +146,7 @@ function goalChart(canvas: HTMLCanvasElement, r: Report, g: Goal) {
       animation: false, // revelação por CSS (.chart-box.wipe)
       interaction: { mode: "index", intersect: false },
       plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => (c.parsed.y == null ? "" : ` ${c.dataset.label}: ${money(c.parsed.y)}`) } } },
-      scales: { x: { ticks: { maxTicksLimit: 8, maxRotation: 0 }, grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: (v) => axisMoney(Number(v) / 1000, " mil") } } },
+      scales: { x: { ticks: xTicks(8), grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: (v) => axisMoney(Number(v) / 1000, " mil") } } },
     },
   });
 }

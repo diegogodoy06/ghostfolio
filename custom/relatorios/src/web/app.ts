@@ -4,7 +4,7 @@ import {
 } from "chart.js";
 import type { CategoryGroup, Position, Report } from "../shared";
 import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, real, rebased, ret, stats } from "./calc";
-import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, axisMoney, countUp, dateBR, esc, fadeFill, growBars, privacy, toast, money, openModal, pct, qty, skeleton, spinDonut, spct, tone } from "./ui";
+import { ACCENT, CATEGORY_COLOR, MOBILE_QUERY, MONTHS, PALETTE, axisMoney, countUp, dateBR, esc, fadeFill, growBars, isMobile, privacy, toast, money, openModal, pct, qty, skeleton, spinDonut, spct, tone, xTicks } from "./ui";
 import { mountSimSummary, renderCarteiraSim, simOutlook } from "./simulacao";
 import { openClaudeModal } from "./claude";
 import { mountGoalsSummary, renderMetas } from "./metas";
@@ -16,6 +16,8 @@ Chart.defaults.color = "rgba(255,255,255,0.7)";
 Chart.defaults.animation = { duration: 450, easing: "easeOutQuart" };
 Chart.defaults.borderColor = "rgba(255,255,255,0.12)";
 Chart.defaults.font.family = '"Inter", Roboto, "Helvetica Neue", sans-serif';
+// Celular: letras dos eixos e legendas um pouco menores.
+if (isMobile()) Chart.defaults.font.size = 11;
 
 const BENCH = [
   { key: "carteira", label: "Carteira", color: ACCENT },
@@ -152,6 +154,18 @@ function render() {
   void main.offsetWidth; // reinicia a animação de entrada
   main.classList.add("enter");
   countUp(main);
+  centerActiveChips();
+}
+
+/** Faixas de chips que rolam de lado (celular): deixa o chip escolhido à vista. */
+function centerActiveChips() {
+  main.querySelectorAll<HTMLElement>(".chips").forEach((row) => {
+    const active = row.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!active || row.scrollWidth <= row.clientWidth) return;
+    const a = active.getBoundingClientRect();
+    const r = row.getBoundingClientRect();
+    row.scrollLeft += a.left - r.left - (r.width - a.width) / 2;
+  });
 }
 
 // ---------- componentes ----------
@@ -287,7 +301,7 @@ function renderResumo(r: Report) {
         animation: false, // revelação feita por CSS (.chart-box.wipe)
         interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${(c.parsed.y ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` } } },
-        scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false } }, y: { ticks: { callback: (v) => `${v}%` } } },
+        scales: { x: { ticks: xTicks(), grid: { display: false } }, y: { ticks: { callback: (v) => `${v}%` } } },
       },
     }),
   );
@@ -309,7 +323,7 @@ function renderResumo(r: Report) {
         animation: false,
         interaction: { mode: "index", intersect: false },
         plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}` } } },
-        scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false } }, y: { ticks: { callback: (v) => axisMoney(Number(v) / 1000, " mil") } } },
+        scales: { x: { ticks: xTicks(), grid: { display: false } }, y: { ticks: { callback: (v) => axisMoney(Number(v) / 1000, " mil") } } },
       },
     }),
   );
@@ -319,7 +333,7 @@ function renderResumo(r: Report) {
 function ghostNote(r: Report, gain: number) {
   const g = r.ghostfolio[state.period as keyof Report["ghostfolio"]];
   if (!g) return "";
-  return `<br>No Ghostfolio, este período aparece como <b>${pct(g.pct)}</b>: o ganho é o mesmo (${money(g.gain)} lá, ${money(gain)} aqui), mas ele divide pelo <b>capital médio investido</b> no período. Com aportes ao longo do ano, os dois métodos dão percentuais diferentes para o mesmo dinheiro.`;
+  return `<details class="why"><summary>Por que o Ghostfolio mostra ${pct(g.pct)}?</summary>O ganho é o mesmo (${money(g.gain)} lá, ${money(gain)} aqui), mas o Ghostfolio divide pelo <b>capital médio investido</b> no período. Com aportes ao longo do ano, os dois métodos dão percentuais diferentes para o mesmo dinheiro.</details>`;
 }
 
 // ---------- Carteira ----------
@@ -335,9 +349,10 @@ function positionsTable(ps: Position[]) {
     .join("");
   const cards = ps
     .map(
-      (p) => `<div class="pos" data-ticker="${esc(p.ticker)}"><div class="head"><span>${esc(p.ticker)} <span class="muted small">${qty(p.quantity)} cotas</span></span><span>${money(p.value)}<span class="sim-hint" data-sim-asset="${esc(p.ticker)}"></span></span></div>
-      <div class="grid"><div><div class="l">P. médio</div>${money(p.avgPrice)}</div><div><div class="l">Preço</div>${money(p.price)}</div><div><div class="l">Retorno</div><span class="${tone(p.gain)}">${spct(p.gainPct, 1)}</span></div>
-      <div><div class="l">Proventos</div>${money(p.income)}</div><div><div class="l">% classe</div>${pct(p.weightInCategory, 1)}</div><div><div class="l">% carteira</div>${pct(p.weight, 1)}</div></div></div>`,
+      (p) => `<div class="pos" data-ticker="${esc(p.ticker)}">
+      <div class="row1"><span class="tk">${esc(p.ticker)}</span><span class="v">${money(p.value)}</span></div>
+      <div class="row2"><span>${qty(p.quantity)} cotas · PM ${money(p.avgPrice)} · ${money(p.price)}</span><span class="${tone(p.gain)}">${spct(p.gainPct, 1)}</span></div>
+      <div class="row3"><span>${esc(p.subcategory)} · ${pct(p.weight, 1)} da carteira</span><span class="sim-hint" data-sim-asset="${esc(p.ticker)}"></span></div></div>`,
     )
     .join("");
   return `<div class="scroll pos-table"><table><thead><tr><th>Ativo</th><th>Qtde</th><th>P. médio</th><th>Preço</th><th>Valor</th><th>Retorno</th><th>Proventos</th><th>% classe</th><th>% carteira</th></tr></thead><tbody>${rows}</tbody></table></div><div class="pos-cards">${cards}</div>`;
@@ -467,7 +482,7 @@ function assetModal(r: Report, ticker: string) {
       maintainAspectRatio: false,
       animation: growBars(),
       plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}` } } },
-      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: (v) => axisMoney(v) } } },
+      scales: { x: { stacked: true, grid: { display: false }, ticks: xTicks(12) }, y: { stacked: true, ticks: { callback: (v) => axisMoney(v) } } },
     },
   });
   // O gráfico do modal é destruído junto com ele.
@@ -536,11 +551,16 @@ function renderProventos(r: Report) {
       <div class="card"><h2>Por tipo</h2>${legendList([...byType.entries()].sort((a, b) => b[1] - a[1]).map(([t, v], j) => ({ label: t, value: v, weight: v / (typeTotal || 1), color: PALETTE[j % PALETTE.length]! })))}
         <h3>Por ano</h3>${legendList([...byYear.entries()].sort().reverse().map(([yy, v]) => ({ label: yy, value: v, weight: v / (typeTotal || 1), color: "#36cfcc" })))}</div>
     </section>
-    <section class="card"><h2>Últimos lançamentos</h2><div class="scroll"><table><thead><tr><th>Data</th><th>Ativo</th><th>Tipo</th><th>Valor</th></tr></thead><tbody>${[...r.incomes]
+    <section class="card"><h2>Últimos lançamentos</h2><div class="scroll"><table class="inc-table"><thead><tr><th>Data</th><th>Ativo</th><th>Tipo</th><th>Valor</th></tr></thead><tbody>${[...r.incomes]
       .reverse()
       .slice(0, 40)
-      .map((i) => `<tr><td>${dateBR(i.date)}</td><td>${esc(i.ticker)}</td><td>${esc(i.type)}</td><td>${money(i.value)}</td></tr>`)
-      .join("")}</tbody></table></div></section>`;
+      .map((i) => `<tr><td class="c-date">${dateBR(i.date)}</td><td class="c-tk">${esc(i.ticker)}</td><td class="c-type">${esc(i.type)}</td><td class="c-val">${money(i.value)}</td></tr>`)
+      .join("")}</tbody></table></div><button class="ghost more-btn" id="inc-more">Mostrar mais</button></section>`;
+  // Celular: a lista começa curta (CSS) e abre por inteiro no botão.
+  document.getElementById("inc-more")!.addEventListener("click", (e) => {
+    main.querySelector(".inc-table")!.classList.add("all");
+    (e.currentTarget as HTMLElement).remove();
+  });
 
   main.querySelectorAll<HTMLButtonElement>("[data-irange]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -567,7 +587,7 @@ function renderProventos(r: Report) {
           legend: { position: "bottom", labels: { boxWidth: 10 } },
           tooltip: { mode: "index", filter: (i) => (i.parsed.y ?? 0) > 0, callbacks: { label: (c) => ` ${c.dataset.label}: ${money(c.parsed.y ?? 0)}`, footer: (items) => `Total: ${money(items.reduce((s, i) => s + (i.parsed.y ?? 0), 0))}` } },
         },
-        scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: (v) => axisMoney(v) } } },
+        scales: { x: { stacked: true, grid: { display: false }, ticks: xTicks(12) }, y: { stacked: true, ticks: { callback: (v) => axisMoney(v) } } },
       },
     }),
   );
@@ -582,8 +602,16 @@ function renderRentabilidade(r: Report) {
   const cell = (m: { ret: number; cdi: number | null } | null) =>
     m ? `<td><span class="${tone(m.ret)}">${pct(m.ret)}</span><span class="c">${m.cdi ? `${pct(m.ret / m.cdi, 0)} CDI` : ""}</span></td>` : `<td class="muted">—</td>`;
   main.innerHTML = `
-    <section class="card"><h2>Rentabilidade mensal</h2><div class="scroll"><table class="months"><thead><tr><th>Ano</th>${MONTHS.map((m) => `<th>${m}</th>`).join("")}<th>Ano</th></tr></thead>
+    <section class="card"><h2>Rentabilidade mensal</h2><div class="scroll months-wrap"><table class="months"><thead><tr><th>Ano</th>${MONTHS.map((m) => `<th>${m}</th>`).join("")}<th>Ano</th></tr></thead>
       <tbody>${rows.map((row) => `<tr><td><b>${row.year}</b></td>${row.months.map(cell).join("")}${cell(row.year_)}</tr>`).join("")}</tbody></table></div>
+      <div class="months-m">${rows
+        .map(
+          (row) => `<div class="my"><div class="my-head"><b>${row.year}</b>${row.year_ ? `<span class="${tone(row.year_.ret)}">${pct(row.year_.ret)}</span>` : ""}</div>
+          <div class="my-grid">${row.months
+            .map((m, k) => `<div class="mc ${m ? (m.ret >= 0 ? "pos" : "neg") : "empty"}"><span class="mn">${MONTHS[k]}</span>${m ? `<span class="${tone(m.ret)}">${pct(m.ret, 1)}</span><span class="c">${m.cdi ? `${pct(m.ret / m.cdi, 0)} CDI` : ""}</span>` : `<span class="muted">—</span>`}</div>`)
+            .join("")}</div></div>`,
+        )
+        .join("")}</div>
       <p class="note">Rentabilidade por cota com proventos. Abaixo de cada mês, quanto ele representou do CDI.</p></section>
     <section class="card"><h2>Estatísticas</h2>${periodChips()}
       <div class="stats">
@@ -650,6 +678,18 @@ document.querySelectorAll<HTMLButtonElement>("#scope button").forEach((b) =>
     load();
   }),
 );
+// Celular: os botões de ação vão para a barra superior (fixa), ao lado do perfil; no computador
+// voltam para o cabeçalho da página.
+function placeActions() {
+  const group = document.getElementById("actions")!;
+  if (isMobile()) document.querySelector(".gf-toolbar")!.insertBefore(group, document.getElementById("gf-menu"));
+  else document.querySelector(".top-actions")!.append(group);
+}
+placeActions();
+MOBILE_QUERY.addEventListener("change", () => {
+  placeActions();
+  render(); // gráficos e tabelas se ajustam à nova largura
+});
 document.getElementById("refresh")!.addEventListener("click", () => load(true));
 document.getElementById("extratos")!.addEventListener("click", openExtratosModal);
 document.getElementById("logout")!.addEventListener("click", async (e) => {

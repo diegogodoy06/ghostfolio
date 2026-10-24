@@ -1,0 +1,17 @@
+{
+  "name": "Relatórios · Ghostfolio",
+  "short_name": "Carteira",
+  "description": "Relatórios da carteira no estilo brasileiro sobre o Ghostfolio",
+  "lang": "pt-BR",
+  "start_url": "./#resumo",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#191919",
+  "theme_color": "#191919",
+  "icons": [
+    { "src": "icons/app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/app-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

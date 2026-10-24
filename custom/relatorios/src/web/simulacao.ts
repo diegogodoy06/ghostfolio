@@ -365,12 +365,12 @@ function categoryBlock(r: Report, c: CategoryAction, res: SimResult) {
         ? `<span class="${move > 0 ? "up" : "down"}">${move > 0 ? "+" : "−"} ${money(Math.abs(move))}</span><div class="small muted">${move > 0 ? "+" : "−"}${qtyLabel(a.quantity, a.whole)}${a.manual > 0.005 ? ` · <button class="link small" data-edit-buy="${esc(x.ticker)}">boleta</button>` : ""}</div>`
         : `<span class="muted">—</span>`;
       return `<tr class="${x.isNew ? "is-new" : ""} ${sold ? "is-sold" : ""}">
-        <td><div class="tk">${esc(x.ticker)}${x.isNew ? ` <span class="badge new">novo</span>` : ""}${sold ? ` <span class="badge sell">venda total</span>` : ""}</div><div class="nm">${esc(x.sub)}</div></td>
-        <td>${qty(x.quantity)}</td><td>${x.price ? money(x.price) : "—"}</td><td>${money(x.value)}</td>
-        <td>${sim}</td><td><b>${money(after)}</b></td>
-        <td>${pct(c.current ? x.value / c.current : 0, 1)} → <b>${pct(after / catAfterTotal, 1)}</b></td>
-        ${plan.mode === "custom" ? `<td><span class="pct-input slim"><input inputmode="decimal" data-cat="${esc(c.name)}" data-w="${esc(x.ticker)}" value="${(plan.weights?.[x.ticker] ?? 0).toLocaleString("pt-BR")}"/><b>%</b></span></td>` : ""}
-        <td class="trade"><button class="mini buy" data-trade="buy" data-ticker="${esc(x.ticker)}" title="Comprar">C</button>${x.isNew ? `<button class="mini" data-rm-extra="${esc(x.ticker)}" data-cat="${esc(c.name)}" title="Remover">✕</button>` : `<button class="mini sell" data-trade="sell" data-ticker="${esc(x.ticker)}" title="Vender">V</button>`}</td></tr>`;
+        <td class="c-asset"><div class="tk">${esc(x.ticker)}${x.isNew ? ` <span class="badge new">novo</span>` : ""}${sold ? ` <span class="badge sell">venda total</span>` : ""}</div><div class="nm">${esc(x.sub)}</div></td>
+        <td class="c-qty" data-l="Qtde">${qty(x.quantity)}</td><td class="c-price" data-l="Preço">${x.price ? money(x.price) : "—"}</td><td class="c-now" data-l="Hoje">${money(x.value)}</td>
+        <td class="c-sim" data-l="Simulação">${sim}</td><td class="c-after" data-l="Depois"><b>${money(after)}</b></td>
+        <td class="c-pct" data-l="% da classe">${pct(c.current ? x.value / c.current : 0, 1)} → <b>${pct(after / catAfterTotal, 1)}</b></td>
+        ${plan.mode === "custom" ? `<td class="c-w" data-l="Peso alvo"><span class="pct-input slim"><input inputmode="decimal" data-cat="${esc(c.name)}" data-w="${esc(x.ticker)}" value="${(plan.weights?.[x.ticker] ?? 0).toLocaleString("pt-BR")}"/><b>%</b></span></td>` : ""}
+        <td class="trade c-trade"><button class="mini buy" data-trade="buy" data-ticker="${esc(x.ticker)}" title="Comprar">C</button>${x.isNew ? `<button class="mini" data-rm-extra="${esc(x.ticker)}" data-cat="${esc(c.name)}" title="Remover">✕</button>` : `<button class="mini sell" data-trade="sell" data-ticker="${esc(x.ticker)}" title="Vender">V</button>`}</td></tr>`;
     })
     .join("");
   const open = openCats.has(c.name);

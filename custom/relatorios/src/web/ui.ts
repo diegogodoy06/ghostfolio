@@ -171,3 +171,25 @@ export function countUp(root: ParentNode, selector = ".kpi .value") {
     requestAnimationFrame(tick);
   });
 }
+
+// ---------- Celular ----------
+export const MOBILE_QUERY = window.matchMedia("(max-width: 575.98px)");
+export const isMobile = () => MOBILE_QUERY.matches;
+
+/**
+ * Eixo X dos gráficos de linha: no celular, menos marcas e datas curtas ("out/25" em vez de
+ * "24/10/2025"), para não se sobreporem.
+ */
+export function xTicks(maxDesktop = 6): any {
+  const mobile = isMobile();
+  return {
+    maxTicksLimit: mobile ? 4 : maxDesktop,
+    maxRotation: 0,
+    autoSkipPadding: mobile ? 14 : 8,
+    callback(this: any, v: number) {
+      const label = String(this.getLabelForValue(v));
+      const m = /^(\d{2})\/(\d{2})\/\d{2}(\d{2})$/.exec(label);
+      return mobile && m ? `${MONTHS[Number(m[2]) - 1]!.toLowerCase()}/${m[3]}` : label;
+    },
+  };
+}
