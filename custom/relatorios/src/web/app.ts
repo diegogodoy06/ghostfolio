@@ -8,6 +8,7 @@ import { ACCENT, CATEGORY_COLOR, MONTHS, PALETTE, axisMoney, countUp, dateBR, es
 import { mountSimSummary, renderCarteiraSim, simOutlook } from "./simulacao";
 import { openClaudeModal } from "./claude";
 import { mountGoalsSummary, renderMetas } from "./metas";
+import { openExtratosModal } from "./extratos";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
 Chart.defaults.color = "rgba(255,255,255,0.7)";
@@ -68,7 +69,8 @@ state.tab = tabFromHash();
 state.carteiraMode = saved("rel.carteiraMode", "atual") === "sim" ? "sim" : "atual";
 let charts: Chart[] = [];
 const main = document.getElementById("main")!;
-const GHOSTFOLIO = `${location.protocol}//${location.hostname}:3333/pt/`;
+// Endereço do Ghostfolio: informado pelo servidor (domínio próprio) ou, por padrão, a porta 3333 deste host.
+const GHOSTFOLIO = `${(document.querySelector<HTMLMetaElement>('meta[name="ghostfolio-url"]')?.content || `${location.protocol}//${location.hostname}:3333`).replace(/\/$/, "")}/pt/`;
 
 async function load(refresh = false) {
   const btn = document.getElementById("refresh")!;
@@ -649,6 +651,7 @@ document.querySelectorAll<HTMLButtonElement>("#scope button").forEach((b) =>
   }),
 );
 document.getElementById("refresh")!.addEventListener("click", () => load(true));
+document.getElementById("extratos")!.addEventListener("click", openExtratosModal);
 document.getElementById("claude")!.addEventListener("click", () => {
   if (state.report && !state.report.ghostfolioRestricted) void openClaudeModal(state.report);
   else toast("Carregue a carteira primeiro");

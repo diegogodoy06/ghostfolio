@@ -1,0 +1,34 @@
+# Servidor: só o Caddy fica exposto (80/443, com HTTPS automático); Ghostfolio e relatórios
+# deixam de publicar as portas 3333/3334. Ativado pelo COMPOSE_FILE do .env do servidor.
+services:
+  ghostfolio:
+    ports: !reset []
+
+  ghostfolio-relatorios:
+    ports: !reset []
+    environment:
+      PUBLIC_GHOSTFOLIO_URL: https://${GF_DOMAIN:?defina GF_DOMAIN no .env}
+
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    container_name: gf-caddy
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 443:443
+      - 443:443/udp
+    environment:
+      GF_DOMAIN: ${GF_DOMAIN}
+      REL_DOMAIN: ${REL_DOMAIN:?defina REL_DOMAIN no .env}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - ghostfolio
+      - ghostfolio-relatorios
+
+volumes:
+  caddy-data:
+  caddy-config:

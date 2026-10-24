@@ -16,8 +16,13 @@ const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replac
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
 const PORT = Number(process.env.PORT ?? 3334);
 const PUBLIC_DIR = path.join(__dirname, "public");
-const OVERRIDES = path.join(process.env.EXTRATOS_DIR ?? "/extratos", "categorias.json");
+const EXTRATOS_DIR = process.env.EXTRATOS_DIR ?? "/extratos";
+const OVERRIDES = path.join(EXTRATOS_DIR, "categorias.json");
+// Arquivos aceitos na pasta de extratos: planilhas da B3 e os dois arquivos de ajuste.
+const EXTRATO_NAME = /^(?:[\w][\w .()-]{0,120}\.xlsx|ajustes\.json|categorias\.json)$/i;
 const CACHE_MS = 5 * 60_000;
+// Endereço público do Ghostfolio (ex.: https://carteira.exemplo.com), usado nos links do topo.
+const PUBLIC_GHOSTFOLIO_URL = (process.env.PUBLIC_GHOSTFOLIO_URL ?? "").replace(/["<>]/g, "");
 
 if (!TOKEN) {
   console.error("Defina GHOSTFOLIO_ACCESS_TOKEN (custom/sync/sync.env).");
@@ -59,6 +64,17 @@ function send(res: http.ServerResponse, status: number, body: unknown, headers: 
   res.end(json ? JSON.stringify(body) : body);
 }
 
+async function readRaw(req: http.IncomingMessage, limit: number) {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req as AsyncIterable<Buffer>) {
+    size += chunk.length;
+    if (size > limit) throw new Error("arquivo grande demais");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 async function readBody(req: http.IncomingMessage, limit = 10_000) {
   let raw = "";
   for await (const chunk of req) {
@@ -75,7 +91,9 @@ const server = http.createServer(async (req, res) => {
       const { token } = await readBody(req);
       // Comparação em tempo constante sobre os hashes.
       if (typeof token !== "string" || !crypto.timingSafeEqual(sha(token.trim()), sha(TOKEN))) return send(res, 401, { error: "Token inválido" });
-      return send(res, 200, { ok: true }, { "set-cookie": `rel_session=${SESSION}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict` });
+      // Atrás de um proxy HTTPS o cookie só trafega cifrado.
+      const secure = req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
+      return send(res, 200, { ok: true }, { "set-cookie": `rel_session=${SESSION}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict${secure}` });
     }
     if (url.pathname === "/api/logout" && req.method === "POST") {
       return send(res, 200, { ok: true }, { "set-cookie": "rel_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict" });
@@ -118,6 +136,52 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true });
       }
     }
+    // Extratos da B3: listar, enviar e remover arquivos da pasta lida pela sincronização.
+    if (url.pathname === "/api/extratos") {
+      if (!authed(req)) return send(res, 401, { error: "login" });
+      if (req.method === "GET") {
+        const files = fs.existsSync(EXTRATOS_DIR)
+          ? fs
+              .readdirSync(EXTRATOS_DIR)
+              .filter((f) => EXTRATO_NAME.test(f))
+              .map((f) => {
+                const st = fs.statSync(path.join(EXTRATOS_DIR, f));
+                return { name: f, size: st.size, modified: st.mtime.toISOString() };
+              })
+              .sort((a, b) => b.modified.localeCompare(a.modified))
+          : [];
+        let writable = true;
+        try {
+          fs.accessSync(EXTRATOS_DIR, fs.constants.W_OK);
+        } catch {
+          writable = false;
+        }
+        return send(res, 200, { files, writable });
+      }
+      const name = path.basename(url.searchParams.get("name") ?? "");
+      if (!EXTRATO_NAME.test(name)) return send(res, 400, { error: "Só arquivos .xlsx da B3, ajustes.json ou categorias.json." });
+      const file = path.join(EXTRATOS_DIR, name);
+      if (req.method === "PUT") {
+        const body = await readRaw(req, 15_000_000);
+        if (name.endsWith(".json")) {
+          try {
+            JSON.parse(body.toString("utf8"));
+          } catch {
+            return send(res, 400, { error: `${name} não é um JSON válido.` });
+          }
+        } else if (body.subarray(0, 2).toString("latin1") !== "PK") {
+          return send(res, 400, { error: `${name} não parece uma planilha .xlsx.` });
+        }
+        const tmp = path.join(EXTRATOS_DIR, `.${name}.tmp`);
+        fs.writeFileSync(tmp, body);
+        fs.renameSync(tmp, file); // a sincronização só enxerga o arquivo completo
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === "DELETE") {
+        if (fs.existsSync(file)) fs.unlinkSync(file);
+        return send(res, 200, { ok: true });
+      }
+    }
     // Arquivos estáticos (SPA).
     // Só arquivos de public/ (e public/fonts/, public/icons/); nada de "..".
     const rel = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
@@ -131,6 +195,9 @@ const server = http.createServer(async (req, res) => {
         "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'",
         "x-content-type-options": "nosniff",
       });
+      if (full.endsWith("index.html") && PUBLIC_GHOSTFOLIO_URL) {
+        return res.end(fs.readFileSync(full, "utf8").replace('name="ghostfolio-url" content=""', `name="ghostfolio-url" content="${PUBLIC_GHOSTFOLIO_URL}"`));
+      }
       return fs.createReadStream(full).pipe(res);
     }
     send(res, 404, "não encontrado");

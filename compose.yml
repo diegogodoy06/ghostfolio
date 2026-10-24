@@ -43,7 +43,8 @@ services:
       EXTRATOS_DIR: /extratos
       DATA_DIR: /data
     volumes:
-      - ./extratos:/extratos:ro
+      # Gravável: os extratos podem ser enviados pela tela dos relatórios.
+      - ./extratos:/extratos
       - relatorios-data:/data
     ports:
       - 3334:3334

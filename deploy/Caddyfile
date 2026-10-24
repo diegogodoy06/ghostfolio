@@ -1,0 +1,24 @@
+# HTTPS automático (Let's Encrypt) para os dois endereços.
+{
+	email {$ACME_EMAIL}
+}
+
+(seguranca) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+}
+
+{$GF_DOMAIN} {
+	import seguranca
+	reverse_proxy ghostfolio:3333
+}
+
+{$REL_DOMAIN} {
+	import seguranca
+	reverse_proxy ghostfolio-relatorios:3334
+}

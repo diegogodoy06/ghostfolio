@@ -67,6 +67,16 @@ Para o que a B3 não informa (preço de subscrição, entradas sem histórico). 
 
 Tipos: `ENTRADA`, `SUBSCRICAO`, `COMPRA`, `VENDA`, `CONVERSAO` (`ativo_destino`, `quantidade_destino`, `sobra`) e `PRECO` (corrige uma entrada sem preço no extrato).
 
+## Servidor (Docker + domínio com HTTPS)
+
+Em `deploy/`: `compose.server.yml` (só o Caddy fica exposto, com certificado automático), `migrate.sh` (leva banco, simulação, metas, estado da sincronização, extratos e segredos deste Mac para o servidor), `update.sh` (backup + `git pull` do fork + imagens novas + rebuild) e `install-cron.sh` (roda o `update.sh` todo dia às 04:00). Backups ficam em `backups/` no servidor (últimos 14).
+
+```bash
+deploy/migrate.sh usuario@servidor /opt/ghostfolio gf.dominio.com rel.dominio.com email@dominio.com
+```
+
+Os extratos podem ser enviados pelo botão de nuvem no topo dos relatórios.
+
 ## Importante
 
 - As contas da B3 são **espelho dos extratos**: edições feitas nelas pela interface são desfeitas na próxima sincronização. Corrija via `ajustes.json`.
