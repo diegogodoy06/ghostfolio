@@ -100,8 +100,6 @@ async function fetchReport(refresh: boolean) {
     return;
   }
   state.report = await res.json();
-  // Extratos da B3 só para o usuário da sincronização.
-  document.getElementById("extratos")!.hidden = state.report!.owner === false;
   fillAccounts();
   render();
 }

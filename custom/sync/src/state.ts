@@ -6,6 +6,8 @@ export interface State {
   baseCurrencySet?: boolean;
   gatheredSince?: string;
   tesouroHistoryLoaded?: boolean;
+  /** Estado de cada usuário extra (cadastrado pelos relatórios), por id do Ghostfolio. */
+  users?: Record<string, State>;
 }
 
 const DATA_DIR = process.env.DATA_DIR ?? "/data";

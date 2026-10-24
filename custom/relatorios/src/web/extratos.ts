@@ -17,6 +17,7 @@ export function openExtratosModal() {
     `<p class="muted" style="margin-top:0">Baixe na <b>Área do Investidor da B3</b> os extratos de <b>Movimentação</b> e de <b>Posição</b> (Excel) e envie aqui. A sincronização atualiza o Ghostfolio sozinha em até um minuto. Também aceita <code>ajustes.json</code> e <code>categorias.json</code>.</p>
      <label class="dropzone" tabindex="0"><input type="file" multiple accept=".xlsx,.json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/json" hidden/>
        <span class="ico" style="--icon: url(icons/cloud-upload-outline.svg)"></span><b>Escolher arquivos</b><span class="muted small">ou arraste para cá</span></label>
+     <p class="note x-sync" id="x-sync" hidden></p>
      <p class="error small" id="x-error" hidden></p>
      <h3>Na pasta</h3><div id="x-list" class="x-list"><p class="muted small">Carregando…</p></div>`,
     { wide: true },
@@ -32,7 +33,18 @@ export function openExtratosModal() {
       list.innerHTML = `<p class="error small">Não foi possível ler a pasta de extratos.</p>`;
       return;
     }
-    const { files, writable } = (await res.json()) as { files: ExtratoFile[]; writable: boolean };
+    const { files, writable, owner, autoSync } = (await res.json()) as { files: ExtratoFile[]; writable: boolean; owner: boolean; autoSync: boolean };
+    const note = m.el.querySelector<HTMLElement>("#x-sync")!;
+    note.hidden = owner;
+    note.innerHTML = autoSync
+      ? `<b>Sincronização automática ligada</b> para a sua conta: o servidor guarda o seu token de segurança cifrado para importar os extratos e lançar proventos e preços do Tesouro todo dia. <button class="link" id="x-stop">Desligar</button>`
+      : `Ao enviar o primeiro arquivo, o servidor passa a guardar o seu token de segurança <b>cifrado</b> para importar os extratos na sua conta e atualizar proventos e preços do Tesouro todo dia. Dá para desligar aqui quando quiser.`;
+    note.querySelector("#x-stop")?.addEventListener("click", async () => {
+      if (!confirm("Desligar a sincronização automática? Os extratos ficam na pasta, mas a sua conta deixa de ser atualizada sozinha.")) return;
+      const r = await fetch("/api/extratos/sync", { method: "DELETE" });
+      toast(r.ok ? "Sincronização automática desligada" : "Não foi possível desligar");
+      void refresh();
+    });
     if (!writable) {
       zone.classList.add("disabled");
       err.hidden = false;

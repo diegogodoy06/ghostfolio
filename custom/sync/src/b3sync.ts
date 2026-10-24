@@ -28,7 +28,7 @@ export async function syncB3Accounts(api: Api, desired: DesiredActivity[], exist
     if (accountId.has(name)) continue;
     dry(`conta nova: ${name}`);
     if (!DRY_RUN) {
-      const created = await api<{ id: string }>("POST", "/v1/account", { balance: 0, comment: "Gerenciada pelo ghostfolio-sync (extratos da B3)", currency: "BRL", isExcluded: false, name, platformId: null });
+      const created = await api<{ id: string }>("POST", "/v1/account", { balance: 0, comment: "Gerenciada pelo ghostfolio-sync (extratos da B3)", currency: "BRL", name, platformId: null });
       accountId.set(name, created.id);
     } else accountId.set(name, `novo:${name}`);
   }

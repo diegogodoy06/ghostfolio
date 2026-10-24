@@ -19,10 +19,13 @@ services:
       GHOSTFOLIO_URL: http://ghostfolio:3333
       EXTRATOS_DIR: /extratos
       DATA_DIR: /data
+      RELATORIOS_DATA_DIR: /relatorios
     volumes:
       # Solte aqui os .xlsx da B3 (Movimentação e Posição) e o ajustes.json
       - ./extratos:/extratos:ro
       - sync-data:/data
+      # Outros usuários que enviaram extratos pelos relatórios (token cifrado).
+      - relatorios-data:/relatorios:ro
     depends_on:
       ghostfolio:
         condition: service_healthy

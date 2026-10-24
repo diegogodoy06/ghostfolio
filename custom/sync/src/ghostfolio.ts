@@ -21,11 +21,11 @@ export interface Account {
 
 export type Api = <T = unknown>(method: string, path: string, body?: unknown) => Promise<T>;
 
-export async function connect(baseUrl: string): Promise<Api> {
+export async function connect(baseUrl: string, token?: string): Promise<Api> {
   const url = baseUrl.replace(/\/$/, "");
-  let jwt = process.env.GHOSTFOLIO_BEARER; // só para testes locais
+  let jwt = token ? undefined : process.env.GHOSTFOLIO_BEARER; // só para testes locais
   if (!jwt) {
-    const accessToken = process.env.GHOSTFOLIO_ACCESS_TOKEN;
+    const accessToken = token ?? process.env.GHOSTFOLIO_ACCESS_TOKEN;
     if (!accessToken) throw new Error("Defina GHOSTFOLIO_ACCESS_TOKEN em custom/sync/sync.env (token de segurança do Ghostfolio).");
     const res = await fetch(`${url}/api/v1/auth/anonymous`, {
       method: "POST",

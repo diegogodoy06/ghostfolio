@@ -70,3 +70,12 @@ export function unseal(value: string): string | null {
     return null;
   }
 }
+
+// ---- Sincronização de outros usuários: token cifrado com chave que o ghostfolio-sync também deriva. ----
+const SYNC_KEY = crypto.createHmac("sha256", OWNER_TOKEN).update("relatorios-sync-v1").digest();
+export function sealForSync(token: string) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv("aes-256-gcm", SYNC_KEY, iv);
+  const ct = Buffer.concat([c.update(token, "utf8"), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), ct]).toString("base64url");
+}

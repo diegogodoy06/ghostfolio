@@ -13,14 +13,13 @@ import { loadOverrides } from "./categories";
 import { quote } from "./quote";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./mcp";
-import { sameToken, seal, unseal, userDir, userIdOf } from "./users";
+import { sameToken, seal, sealForSync, unseal, userDir, userIdOf } from "./users";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
 const PORT = Number(process.env.PORT ?? 3334);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const EXTRATOS_DIR = process.env.EXTRATOS_DIR ?? "/extratos";
-const OVERRIDES = path.join(EXTRATOS_DIR, "categorias.json");
 // Arquivos aceitos na pasta de extratos: planilhas da B3 e os dois arquivos de ajuste.
 const EXTRATO_NAME = /^(?:[\w][\w .()-]{0,120}\.xlsx|ajustes\.json|categorias\.json)$/i;
 const CACHE_MS = 5 * 60_000;
@@ -52,10 +51,12 @@ const LEGACY_SESSION = crypto.createHmac("sha256", TOKEN).update("relatorios-ses
 interface Session {
   token: string;
   id: string;
-  /** Usuário da sincronização (pode enviar extratos). */
+  /** Usuário do GHOSTFOLIO_ACCESS_TOKEN (dono da instalação). */
   owner: boolean;
   dir: string;
 }
+/** Pasta de extratos do usuário: a raiz para o dono, usuarios/<id>/ para os demais. */
+const extratosDir = (s: Session) => (s.owner ? EXTRATOS_DIR : path.join(EXTRATOS_DIR, "usuarios", s.id));
 async function session(req: http.IncomingMessage): Promise<Session | null> {
   const cookie = /(?:^|;\s*)rel_session=([\w-]+)/.exec(req.headers.cookie ?? "")?.[1];
   const token = DEV_NO_AUTH || cookie === LEGACY_SESSION ? TOKEN : cookie ? unseal(cookie) : null;
@@ -155,7 +156,7 @@ const server = http.createServer(async (req, res) => {
       const key = `${s.id}|${scope}|${accounts.join(",")}`;
       const hit = cache.get(key);
       if (hit && Date.now() - hit.at < CACHE_MS && url.searchParams.get("refresh") !== "1") return send(res, 200, hit.data);
-      loadOverrides(OVERRIDES);
+      loadOverrides(path.join(extratosDir(s), "categorias.json"));
       const data = { ...(await buildReport(await login(BASE_URL, s.token), accounts, scope)), owner: s.owner };
       cache.set(key, { at: Date.now(), data });
       return send(res, 200, data);
@@ -185,17 +186,23 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true });
       }
     }
-    // Extratos da B3: listar, enviar e remover arquivos da pasta lida pela sincronização.
-    if (url.pathname === "/api/extratos" && s) {
-      // A sincronização importa os extratos na conta do dono; só ele mexe na pasta.
-      if (!s.owner) return send(res, 403, { error: "Os extratos são importados na conta do usuário da sincronização." });
+    // Extratos da B3: listar, enviar e remover arquivos da pasta do usuário, lida pela sincronização.
+    if (url.pathname.startsWith("/api/extratos") && s) {
+      const dir = extratosDir(s);
+      const syncFile = path.join(s.dir, "sync.json");
+      // Parar a sincronização automática de um usuário (o dono é sempre sincronizado).
+      if (url.pathname === "/api/extratos/sync" && req.method === "DELETE") {
+        if (fs.existsSync(syncFile)) fs.unlinkSync(syncFile);
+        return send(res, 200, { ok: true });
+      }
+      if (url.pathname !== "/api/extratos") return send(res, 404, { error: "não encontrado" });
       if (req.method === "GET") {
-        const files = fs.existsSync(EXTRATOS_DIR)
+        const files = fs.existsSync(dir)
           ? fs
-              .readdirSync(EXTRATOS_DIR)
+              .readdirSync(dir)
               .filter((f) => EXTRATO_NAME.test(f))
               .map((f) => {
-                const st = fs.statSync(path.join(EXTRATOS_DIR, f));
+                const st = fs.statSync(path.join(dir, f));
                 return { name: f, size: st.size, modified: st.mtime.toISOString() };
               })
               .sort((a, b) => b.modified.localeCompare(a.modified))
@@ -206,11 +213,11 @@ const server = http.createServer(async (req, res) => {
         } catch {
           writable = false;
         }
-        return send(res, 200, { files, writable });
+        return send(res, 200, { files, writable, owner: s.owner, autoSync: s.owner || fs.existsSync(syncFile) });
       }
       const name = path.basename(url.searchParams.get("name") ?? "");
       if (!EXTRATO_NAME.test(name)) return send(res, 400, { error: "Só arquivos .xlsx da B3, ajustes.json ou categorias.json." });
-      const file = path.join(EXTRATOS_DIR, name);
+      const file = path.join(dir, name);
       if (req.method === "PUT") {
         const body = await readRaw(req, 15_000_000);
         if (name.endsWith(".json")) {
@@ -222,9 +229,15 @@ const server = http.createServer(async (req, res) => {
         } else if (body.subarray(0, 2).toString("latin1") !== "PK") {
           return send(res, 400, { error: `${name} não parece uma planilha .xlsx.` });
         }
-        const tmp = path.join(EXTRATOS_DIR, `.${name}.tmp`);
+        fs.mkdirSync(dir, { recursive: true });
+        const tmp = path.join(dir, `.${name}.tmp`);
         fs.writeFileSync(tmp, body);
         fs.renameSync(tmp, file); // a sincronização só enxerga o arquivo completo
+        // Outros usuários: guarda o token (cifrado) para a sincronização rodar na conta deles.
+        if (!s.owner) {
+          const prev = readJson(syncFile) as { name?: string } | null;
+          writeJson(syncFile, { token: sealForSync(s.token), name: prev?.name, updatedAt: new Date().toISOString() });
+        }
         return send(res, 200, { ok: true });
       }
       if (req.method === "DELETE") {
