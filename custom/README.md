@@ -69,7 +69,7 @@ Tipos: `ENTRADA`, `SUBSCRICAO`, `COMPRA`, `VENDA`, `CONVERSAO` (`ativo_destino`,
 
 ## Servidor (Docker + domínio com HTTPS)
 
-Em `deploy/`: `compose.server.yml` (só o Caddy fica exposto, com certificado automático), `migrate.sh` (leva banco, simulação, metas, estado da sincronização, extratos e segredos deste Mac para o servidor), `update.sh` (backup + `git pull` do fork + imagens novas + rebuild) e `install-cron.sh` (roda o `update.sh` todo dia às 04:00). Backups ficam em `backups/` no servidor (últimos 14).
+Em `deploy/`: `compose.server.yml` (atrás de um proxy reverso com HTTPS, como Nginx Proxy Manager ou Cloudflare Tunnel, apontando para as portas 3333 e 3334; `compose.caddy.yml` é a alternativa sem proxy), `migrate.sh` (leva banco, simulação, metas, estado da sincronização, extratos e segredos deste Mac para o servidor), `update.sh` (backup + `git pull` do fork + imagens novas + rebuild) e `install-cron.sh` (roda o `update.sh` todo dia às 04:00). Backups ficam em `backups/` no servidor (últimos 14).
 
 ```bash
 deploy/migrate.sh usuario@servidor /opt/ghostfolio gf.dominio.com rel.dominio.com email@dominio.com

@@ -2,8 +2,9 @@
 # Migra a instância deste Mac para o servidor, com o mesmo banco e os mesmos dados.
 # Uso (no Mac, na raiz do repositório):
 #   deploy/migrate.sh usuario@servidor /opt/ghostfolio gf.dominio.com rel.dominio.com email@dominio.com
-# Pré-requisitos no servidor: Docker com Compose ≥ 2.24, git, portas 80/443 livres e os dois
-# domínios apontando (registro A/AAAA) para ele.
+# Pré-requisitos no servidor: Docker com Compose, git e acesso por chave SSH. O HTTPS fica com o
+# proxy reverso (ex.: Nginx Proxy Manager → <ip>:3333 e <ip>:3334). Sem proxy, acrescente
+# deploy/compose.caddy.yml ao COMPOSE_FILE do .env do servidor.
 set -euo pipefail
 TARGET=${1:?usuario@servidor}; DIR=${2:?pasta no servidor}; GF=${3:?domínio do Ghostfolio}; REL=${4:?domínio dos relatórios}; EMAIL=${5:-}
 cd "$(dirname "$0")/.."
@@ -14,7 +15,7 @@ r() { ssh "$TARGET" "$@"; }
 
 echo "1/6 Conferindo o servidor"
 r "docker compose version --short && git --version" >/dev/null
-r "cd /tmp && (ss -ltn 2>/dev/null || netstat -ltn) | grep -E ':(80|443) ' && echo 'portas 80/443 ocupadas' && exit 1 || true"
+r "(ss -ltn 2>/dev/null || netstat -ltn) | grep -E ':(3333|3334) ' && echo 'portas 3333/3334 já em uso no servidor' && exit 1 || true"
 
 echo "2/6 Código do fork no servidor"
 r "test -d '$DIR/.git' || git clone --depth 50 https://github.com/diegogodoy06/ghostfolio.git '$DIR'"
@@ -26,7 +27,7 @@ docker exec gf-postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "$TM
 for v in relatorios-data sync-data; do
   docker run --rm -v "${PROJECT}_${v}:/v:ro" -v "$TMP:/out" alpine tar -C /v -czf "/out/$v.tgz" .
 done
-{ cat .env; printf '\n# Servidor\nCOMPOSE_FILE=compose.yml:deploy/compose.server.yml\nGF_DOMAIN=%s\nREL_DOMAIN=%s\nACME_EMAIL=%s\n' "$GF" "$REL" "$EMAIL"; } > "$TMP/env"
+{ cat .env; printf '\n# Servidor\nCOMPOSE_FILE=compose.yml:deploy/compose.server.yml\nGF_DOMAIN=%s\nREL_DOMAIN=%s\nACME_EMAIL=%s\nROOT_URL=https://%s\n' "$GF" "$REL" "$EMAIL" "$GF"; } > "$TMP/env"
 
 echo "4/6 Copiando para o servidor (banco, volumes, extratos e segredos)"
 r "mkdir -p '$DIR/.migrate' '$DIR/extratos' && chmod 700 '$DIR/.migrate'"
@@ -47,4 +48,4 @@ r "cd '$DIR' && set -a && . ./.env && set +a && \
 
 echo "6/6 Subindo tudo e agendando backup + atualização diária"
 r "cd '$DIR' && docker compose up -d --build && deploy/install-cron.sh && rm -rf .migrate"
-echo "Pronto: https://$GF e https://$REL"
+echo "Pronto. No proxy: $GF → ${TARGET#*@}:3333 e $REL → ${TARGET#*@}:3334"

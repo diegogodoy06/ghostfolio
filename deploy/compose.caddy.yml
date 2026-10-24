@@ -1,0 +1,33 @@
+# Opcional, para servidor sem proxy próprio: só o Caddy fica exposto (80/443, HTTPS automático)
+# e Ghostfolio/relatórios deixam de publicar 3333/3334. Use junto com compose.server.yml:
+#   COMPOSE_FILE=compose.yml:deploy/compose.server.yml:deploy/compose.caddy.yml
+services:
+  ghostfolio:
+    ports: !reset []
+
+  ghostfolio-relatorios:
+    ports: !reset []
+
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    container_name: gf-caddy
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 443:443
+      - 443:443/udp
+    environment:
+      GF_DOMAIN: ${GF_DOMAIN}
+      REL_DOMAIN: ${REL_DOMAIN:?defina REL_DOMAIN no .env}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - ghostfolio
+      - ghostfolio-relatorios
+
+volumes:
+  caddy-data:
+  caddy-config:
