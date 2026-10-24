@@ -11,6 +11,8 @@ import path from "node:path";
 import { SCOPES, type Scope, buildReport, login } from "./report";
 import { loadOverrides } from "./categories";
 import { quote } from "./quote";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createMcpServer } from "./mcp";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
@@ -31,6 +33,17 @@ if (!TOKEN) {
 
 const SESSION = crypto.createHmac("sha256", TOKEN).update("relatorios-session-v1").digest("hex");
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest();
+// Token do MCP por HTTPS: derivado do token do Ghostfolio, mas não serve para entrar nele.
+// Mostrado com: docker exec ghostfolio-relatorios node server.js --mcp-token
+const MCP_TOKEN = crypto.createHmac("sha256", TOKEN).update("relatorios-mcp-v1").digest("hex");
+if (process.argv.includes("--mcp-token")) {
+  console.log(MCP_TOKEN);
+  process.exit(0);
+}
+const mcpAuthed = (req: http.IncomingMessage) => {
+  const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "");
+  return !!m && crypto.timingSafeEqual(sha(m[1]!), sha(MCP_TOKEN));
+};
 // Só para desenvolvimento local (instância temporária presa em 127.0.0.1). Nunca usar no compose.
 const DEV_NO_AUTH = process.env.DEV_NO_AUTH === "1";
 const authed = (req: http.IncomingMessage) => DEV_NO_AUTH || /(?:^|;\s*)rel_session=([a-f0-9]{64})/.exec(req.headers.cookie ?? "")?.[1] === SESSION;
@@ -87,6 +100,20 @@ async function readBody(req: http.IncomingMessage, limit = 10_000) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
   try {
+    // MCP por HTTPS (sem sessão; uma requisição JSON-RPC por chamada).
+    if (url.pathname === "/mcp") {
+      if (!mcpAuthed(req)) return send(res, 401, { error: "token do MCP inválido" }, { "www-authenticate": "Bearer" });
+      if (req.method !== "POST") return send(res, 405, { error: "use POST" }, { allow: "POST" });
+      const body = await readBody(req, 1_000_000);
+      const mcp = createMcpServer();
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+      res.on("close", () => {
+        void transport.close();
+        void mcp.close();
+      });
+      await mcp.connect(transport);
+      return await transport.handleRequest(req, res, body);
+    }
     if (url.pathname === "/api/login" && req.method === "POST") {
       const { token } = await readBody(req);
       // Comparação em tempo constante sobre os hashes.

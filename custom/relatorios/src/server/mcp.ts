@@ -1,14 +1,13 @@
 /**
- * Servidor MCP "carteira" (stdio) para o Claude Desktop / Claude Code.
+ * Servidor MCP "carteira": ferramentas e prompts sobre a carteira, para o Claude Desktop / Code.
  *
- * Roda dentro do container dos relatórios (que já tem o token do Ghostfolio e a simulação salva):
- *   docker exec -i ghostfolio-relatorios node mcp.js
- * Só leitura: nada aqui altera o Ghostfolio nem a simulação salva.
+ * Roda dentro do container dos relatórios (que já tem o token do Ghostfolio e a simulação salva),
+ * por stdio (mcp-stdio.ts, `docker exec -i ghostfolio-relatorios node mcp.js`) ou por HTTPS em
+ * /mcp (main.ts). Só leitura: nada aqui altera o Ghostfolio nem a simulação salva.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { Report } from "../shared";
 import { TASKS, buildContext, buildPrompt } from "../context";
@@ -23,8 +22,6 @@ const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replac
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
 const DATA_DIR = process.env.DATA_DIR ?? "/data";
 const OVERRIDES = path.join(process.env.EXTRATOS_DIR ?? "/extratos", "categorias.json");
-// stdout é o canal do protocolo: qualquer log vai para stderr.
-const log = (...a: unknown[]) => console.error("[mcp carteira]", ...a);
 
 let cached: { at: number; report: Report } | null = null;
 async function getReport(): Promise<Report> {
@@ -72,6 +69,7 @@ const pct = (n: number | null | undefined) => (n == null || !Number.isFinite(n) 
 
 const STATUS: Record<string, string> = { comprar: "comprar", vender: "vender", acima: "acima da meta, sem compra", "na-meta": "sem compra neste aporte", "sem-meta": "sem meta" };
 
+export function createMcpServer() {
 const server = new McpServer({ name: "carteira", version: "1.0.0" });
 
 server.registerTool(
@@ -236,4 +234,5 @@ for (const t of TASKS.filter((x) => x.id !== "livre")) {
   );
 }
 
-server.connect(new StdioServerTransport()).then(() => log("pronto"));
+return server;
+}
