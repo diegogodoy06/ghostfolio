@@ -26,13 +26,13 @@ Extensão do Ghostfolio com o mesmo visual (barra superior com os links dele e m
 
 O container dos relatórios também tem um servidor MCP (só leitura), que funciona com a assinatura do Claude e dispensa a API. Ferramentas: `resumo_carteira`, `posicoes`, `proventos`, `desempenho`, `metas` e `simular_aporte` (não salva nada). Ele também traz prompts prontos de análise.
 
-Claude Desktop (Configurações → Desenvolvedor → Editar configuração, `claude_desktop_config.json`):
+De qualquer lugar (HTTPS): os relatórios atendem MCP em `https://<domínio dos relatórios>/mcp`, com um token próprio (só leitura; não serve para entrar no Ghostfolio). Pegue o token com `docker exec ghostfolio-relatorios node server.js --mcp-token` e use a ponte local `custom/relatorios/mcp-bridge.mjs` no `claude_desktop_config.json`:
 
 ```json
-{ "mcpServers": { "carteira": { "command": "/usr/local/bin/docker", "args": ["exec", "-i", "ghostfolio-relatorios", "node", "mcp.js"] } } }
+{ "mcpServers": { "carteira": { "command": "/opt/homebrew/bin/node", "args": ["/caminho/ghostfolio/custom/relatorios/mcp-bridge.mjs"], "env": { "MCP_URL": "https://relatorios.exemplo.com/mcp", "MCP_TOKEN": "..." } } } }
 ```
 
-Claude Code: `claude mcp add carteira -- docker exec -i ghostfolio-relatorios node mcp.js`
+Na mesma máquina do Docker também dá para usar stdio: `docker exec -i ghostfolio-relatorios node mcp.js`.
 
 Os containers precisam estar rodando. Os dados vão para o Claude como em qualquer conversa.
 
