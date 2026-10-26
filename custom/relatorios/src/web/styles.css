@@ -606,3 +606,19 @@ button, a, summary, .chip, .pos { touch-action: manipulation; }
   /* Avisos acima da barra de abas. */
   .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
 }
+
+/* Metas: aportes extras programados */
+.goal-extras { display: flex; gap: 6px; align-items: center; margin: 6px 0 0; color: var(--ink-2); }
+.goal-extras .ico { width: 15px; height: 15px; color: var(--accent); }
+.extras-field { gap: 8px; }
+.extras-field > button { justify-self: start; }
+.extra-list { display: grid; gap: 10px; }
+.extra-list:empty { display: none; }
+.extra-row { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) auto; grid-template-areas: "mes valor rm" "nota nota ano"; gap: 8px; padding: 10px; border-radius: 12px; background: var(--card-2); animation: rise 0.2s var(--ease) both; }
+.extra-row .x-month { grid-area: mes; height: 44px; }
+.extra-row .money-input { grid-area: valor; }
+.extra-row .money-input input { font-size: 16px; padding: 10px 4px; }
+.extra-row .x-rm { grid-area: rm; justify-self: end; height: 44px; min-width: 44px; color: var(--muted); }
+.extra-row .x-note { grid-area: nota; }
+.extra-row .x-yearly-l { grid-area: ano; margin: 0; white-space: nowrap; font-size: 13px; }
+@media (max-width: 575.98px) { .extra-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; grid-template-areas: "mes mes rm" "valor valor valor" "nota nota ano"; } }

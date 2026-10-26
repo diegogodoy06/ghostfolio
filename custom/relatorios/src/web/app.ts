@@ -128,7 +128,8 @@ function fillAccounts() {
   sel.value = state.account;
 }
 
-function render() {
+/** `animate: false` = troca de filtro na mesma tela: sem a animação de entrada das seções. */
+function render(animate = true) {
   charts.forEach((c) => c.destroy());
   charts = [];
   document.querySelectorAll<HTMLButtonElement>(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
@@ -151,10 +152,30 @@ function render() {
     return;
   }
   ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade, metas: (x: Report) => void renderMetas(x, main, charts) })[state.tab](r);
-  void main.offsetWidth; // reinicia a animação de entrada
-  main.classList.add("enter");
-  countUp(main);
+  if (animate) {
+    void main.offsetWidth; // reinicia a animação de entrada
+    main.classList.add("enter");
+    countUp(main);
+  }
   centerActiveChips();
+}
+
+/**
+ * Redesenha depois de um filtro (período, referência, nominal/real...) mantendo o botão clicado
+ * no mesmo ponto da tela: sem isso a página "pula" quando a altura de algo acima muda.
+ */
+function rerenderFrom(el: HTMLElement) {
+  const attr = ["period", "real", "bench", "irange"].find((k) => el.dataset[k] !== undefined);
+  const selector = attr ? `[data-${attr}="${el.dataset[attr]}"]` : null;
+  const top = el.getBoundingClientRect().top;
+  const row = el.closest<HTMLElement>(".chips");
+  const left = row?.scrollLeft;
+  render(false);
+  const again = selector ? main.querySelector<HTMLElement>(selector) : null;
+  if (!again) return;
+  window.scrollBy({ top: again.getBoundingClientRect().top - top, behavior: "instant" as ScrollBehavior });
+  const newRow = again.closest<HTMLElement>(".chips");
+  if (newRow && left != null) newRow.scrollLeft = left; // a faixa de chips fica onde o dedo deixou
 }
 
 /** Faixas de chips que rolam de lado (celular): deixa o chip escolhido à vista. */
@@ -179,14 +200,14 @@ function wireCommon() {
     b.addEventListener("click", () => {
       state.period = b.dataset.period as PeriodId;
       save("rel.period", state.period);
-      render();
+      rerenderFrom(b);
     }),
   );
   main.querySelectorAll<HTMLButtonElement>("[data-real]").forEach((b) =>
     b.addEventListener("click", () => {
       state.realMode = b.dataset.real === "1";
       save("rel.real", state.realMode ? "1" : "0");
-      render();
+      rerenderFrom(b);
     }),
   );
 }
@@ -237,8 +258,6 @@ function renderResumo(r: Report) {
       <div class="card kpi"><div class="label">Proventos 12 meses</div><div class="value">${money(s.income12m)}</div><div class="sub">yield ${pct(s.yield12m)}</div></div>
       <div class="card kpi"><div class="label">Rendimento no período</div><div class="value ${tone(gain)}">${money(gain)}</div><div class="sub">sendo ${money(incomesPeriod)} em proventos</div></div>
     </section>
-    <section id="sim-summary"></section>
-    <section id="goals-summary"></section>
     <section class="card">
       <div class="row-between"><h2>Meu desempenho</h2>${realToggle()}</div>
       ${periodChips()}
@@ -255,6 +274,8 @@ function renderResumo(r: Report) {
         </div>
       </div>
     </section>
+    <section id="sim-summary"></section>
+    <section id="goals-summary"></section>
     <section class="split">
       <div class="card"><h2>Alocação</h2><div class="chart-box donut"><canvas id="alloc"></canvas></div><h3>Por categoria</h3>${legendList(r.categories.map((c) => ({ label: c.name, value: c.value, weight: c.weight, color: CATEGORY_COLOR[c.name] ?? PALETTE[8]! })))}</div>
       <div class="card"><h2>Evolução do patrimônio</h2><div class="chart-box wipe"><canvas id="equity"></canvas></div><p class="note">Valor de mercado × valor investido.</p></div>
@@ -265,7 +286,7 @@ function renderResumo(r: Report) {
       const k = b.dataset.bench!;
       state.bench.has(k) ? state.bench.delete(k) : state.bench.add(k);
       save("rel.bench", [...state.bench].join(","));
-      render();
+      rerenderFrom(b);
     }),
   );
 
@@ -566,7 +587,7 @@ function renderProventos(r: Report) {
     b.addEventListener("click", () => {
       state.incomeRange = b.dataset.irange!;
       save("rel.incomeRange", state.incomeRange);
-      render();
+      rerenderFrom(b);
     }),
   );
   const val = (m: string, c: string, est: boolean) => r.incomes.filter((i) => i.date.startsWith(m) && i.category === c && i.estimated === est).reduce((s, i) => s + i.value, 0);

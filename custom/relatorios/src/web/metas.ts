@@ -1,7 +1,7 @@
 // Metas de patrimônio: "quero chegar a R$ X até tal mês". Independente da simulação de aportes.
 import { Chart } from "chart.js";
 import type { Report } from "../shared";
-import { type Goal, type GoalPlan, INFLATION, STATUS_LABEL, addMonths, futureValue, goalBaseValue as baseValue, monthKey, monthsBetween, planGoal } from "../goals";
+import { type Goal, type GoalExtra, type GoalPlan, INFLATION, STATUS_LABEL, addMonths, extraIn, extrasLabel, goalBaseValue as baseValue, monthKey, monthsBetween, planGoal, projectPath } from "../goals";
 import { indexSeries, periodStart, ret } from "./calc";
 import { ACCENT, MONTHS, axisMoney, esc, fadeFill, money, openModal, parseNum, pct, toast, xTicks } from "./ui";
 
@@ -37,9 +37,10 @@ const statusClass = (s: GoalPlan["status"]) => (s === "atingida" || s === "no-ri
 function verdict(g: Goal, p: GoalPlan) {
   if (p.status === "atingida") return "Meta atingida. Dá para definir a próxima.";
   if (p.status === "vencida") return `O prazo passou e faltam ${money(p.missing)}. Ajuste a data para continuar acompanhando.`;
-  const reach = p.reach ? `Com ${money(g.monthly)} por mês você chega lá em <b>${monthLong(p.reach)}</b>` : `Com ${money(g.monthly)} por mês a meta não é atingida em 50 anos`;
+  const plan = `Com ${money(g.monthly)} por mês${g.extras?.length ? " e os aportes extras" : ""}`;
+  const reach = p.reach ? `${plan} você chega lá em <b>${monthLong(p.reach)}</b>` : `${plan} a meta não é atingida em 50 anos`;
   if (p.status === "no-ritmo") return `${reach}${p.reach && p.reach < g.date ? `, ${duration(monthsBetween(p.reach, g.date))} antes do prazo` : ""}.`;
-  return `${reach}. Para chegar em ${monthLong(g.date)}, o aporte precisa ser de <b>${money(p.required)}</b> por mês (${money(p.required - g.monthly)} a mais).`;
+  return `${reach}. Para chegar em ${monthLong(g.date)}, o aporte mensal precisa ser de <b>${money(p.required)}</b>${g.extras?.length ? ", já contando os extras" : ""} (${money(p.required - g.monthly)} a mais).`;
 }
 
 // ---------- Aba Metas ----------
@@ -96,7 +97,8 @@ function goalCard(r: Report, g: Goal, index: number, count: number) {
   return `<section class="card goal" data-goal="${esc(g.id)}">
     <div class="row-between goal-top">
       <div><h2 style="margin:0">${esc(g.name)}</h2>
-        <p class="muted small" style="margin:4px 0 0">${money(g.target)}${g.real ? " em valores de hoje" : ""} até ${monthLong(g.date)} · ${g.base === "tudo" ? "carteira + reserva" : "só a carteira"} · ${pct(g.annualReturn / 100, 1)} a.a. esperados</p></div>
+        <p class="muted small" style="margin:4px 0 0">${money(g.target)}${g.real ? " em valores de hoje" : ""} até ${monthLong(g.date)} · ${g.base === "tudo" ? "carteira + reserva" : "só a carteira"} · ${pct(g.annualReturn / 100, 1)} a.a. esperados</p>
+        ${g.extras?.length ? `<p class="goal-extras small"><span class="ico" style="--icon: url(icons/calendar-outline.svg)"></span>Extras: ${esc(extrasLabel(g, money, monthLong))}</p>` : ""}</div>
       <div class="goal-actions"><span class="badge ${statusClass(p.status)}">${STATUS_LABEL[p.status]}</span>
         ${count > 1 ? `<span class="goal-move"><button class="icon" data-move="-1" aria-label="Subir meta" title="Subir" ${index === 0 ? "disabled" : ""}>↑</button><button class="icon" data-move="1" aria-label="Descer meta" title="Descer" ${index === count - 1 ? "disabled" : ""}>↓</button></span>` : ""}
         <button class="ghost small-btn goal-edit">Editar</button><button class="icon goal-del" aria-label="Excluir meta" title="Excluir">✕</button></div>
@@ -106,7 +108,7 @@ function goalCard(r: Report, g: Goal, index: number, count: number) {
     <div class="stats goal-stats">
       <div class="stat"><div class="l">Falta</div><div class="v">${money(p.missing)}</div></div>
       <div class="stat"><div class="l">Prazo</div><div class="v">${duration(p.months)}</div></div>
-      <div class="stat"><div class="l">Aporte necessário</div><div class="v">${money(p.required)}<span class="muted small"> /mês</span></div><div class="small muted">você planeja ${money(g.monthly)}</div></div>
+      <div class="stat"><div class="l">Aporte necessário</div><div class="v">${money(p.required)}<span class="muted small"> /mês</span></div><div class="small muted">você planeja ${money(g.monthly)}${p.extrasTotal > 0.5 ? ` + ${money(p.extrasTotal)} em extras` : ""}</div></div>
       <div class="stat"><div class="l">Na data, com seu aporte</div><div class="v ${p.projected >= g.target ? "up" : ""}">${money(p.projected)}</div></div>
     </div>
     <p class="note" style="margin-top:4px">${verdict(g, p)}</p>
@@ -131,10 +133,15 @@ function goalChart(canvas: HTMLCanvasElement, r: Report, g: Goal) {
   if (p.reach && p.reach > end && monthsBetween(end, p.reach) <= 120) end = p.reach;
   const months: string[] = [];
   for (let m = start; m <= end; m = addMonths(m, 1)) months.push(m);
-  const ahead = (pmt: number) => months.map((m) => (m < today ? null : futureValue(value, pmt, p.monthlyRate, monthsBetween(today, m))));
+  // Projeção mês a mês, com os aportes extras (aparecem como degraus marcados no gráfico).
+  const ahead = (pmt: number) => {
+    const path = projectPath(g, value, pmt, p.monthlyRate, monthsBetween(today, end), today);
+    return months.map((m) => (m < today ? null : path[monthsBetween(today, m)]!));
+  };
+  const extraAt = months.map((m) => (m > today ? extraIn(g, m) : 0));
   const datasets: any[] = [
     { label: "Patrimônio", data: months.map((m) => hist.get(m) ?? null), borderColor: ACCENT, backgroundColor: fadeFill("54, 207, 204", 0.22), fill: true, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, spanGaps: true },
-    { label: `Com ${money(g.monthly)}/mês`, data: ahead(g.monthly), borderColor: ACCENT, borderDash: [6, 4], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+    { label: `Com ${money(g.monthly)}/mês${g.extras?.length ? " + extras" : ""}`, data: ahead(g.monthly), borderColor: ACCENT, borderDash: [6, 4], borderWidth: 2, pointRadius: extraAt.map((x) => (x > 0 ? 2.5 : 0)), pointBackgroundColor: ACCENT, pointHoverRadius: 4 },
   ];
   if (p.status === "abaixo") datasets.push({ label: `Necessário: ${money(p.required)}/mês`, data: ahead(p.required).map((v, i) => (months[i]! > g.date ? null : v)), borderColor: "#c98500", borderDash: [2, 4], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 });
   datasets.push({ label: "Meta", data: months.map(() => g.target), borderColor: "rgba(255,255,255,0.45)", borderDash: [3, 3], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0 });
@@ -145,7 +152,15 @@ function goalChart(canvas: HTMLCanvasElement, r: Report, g: Goal) {
       maintainAspectRatio: false,
       animation: false, // revelação por CSS (.chart-box.wipe)
       interaction: { mode: "index", intersect: false },
-      plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => (c.parsed.y == null ? "" : ` ${c.dataset.label}: ${money(c.parsed.y)}`) } } },
+      plugins: {
+        legend: { position: "bottom", labels: { boxWidth: 10 } },
+        tooltip: {
+          callbacks: {
+            label: (c) => (c.parsed.y == null ? "" : ` ${c.dataset.label}: ${money(c.parsed.y)}`),
+            afterBody: (items) => (extraAt[items[0]?.dataIndex ?? -1] ? [`Aporte extra: ${money(extraAt[items[0]!.dataIndex]!)}`] : []),
+          },
+        },
+      },
       scales: { x: { ticks: xTicks(8), grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: (v) => axisMoney(Number(v) / 1000, " mil") } } },
     },
   });
@@ -177,12 +192,34 @@ function goalModal(r: Report, g: Goal | null, done: () => void) {
       </div>
       <p class="muted small" style="margin:-4px 0 0">Referências: sua carteira rendeu ${pct(r12, 1)} nos últimos 12 meses e ${pct(rMaxYear, 1)} ao ano desde o início. Para prazos longos, algo entre 8% e 12% a.a. é uma premissa comum.</p>
       <label class="switch"><input type="checkbox" name="real" ${v.real ? "checked" : ""}/><span></span>Meta em valores de hoje (desconta inflação de ${INFLATION.toLocaleString("pt-BR")}% a.a.)</label>
+      <div class="field extras-field">Aportes extras
+        <p class="muted small" style="margin:0">Meses em que você vai investir além do mensal (ex.: R$ 2.000 em dezembro, ou o 13º todo ano). Entram na projeção a partir do mês que vem.</p>
+        <div class="extra-list"></div>
+        <button type="button" class="ghost" id="x-add">+ Aporte extra</button>
+      </div>
       <p class="error small" hidden></p>
       <div class="row-between" style="margin-top:8px"><span></span><button class="primary" type="submit">${g ? "Salvar" : "Criar meta"}</button></div>
     </form>`,
   );
   const form = m.el.querySelector("form")!;
   let base: Goal["base"] = v.base;
+  const next1 = addMonths(monthKey(new Date()), 1);
+  const list = form.querySelector<HTMLElement>(".extra-list")!;
+  const addExtra = (e?: GoalExtra) => {
+    const row = document.createElement("div");
+    row.className = "extra-row";
+    row.dataset.id = e?.id ?? crypto.randomUUID();
+    row.innerHTML = `<input type="month" class="x-month" aria-label="Mês" min="${e && e.month < next1 ? e.month : next1}" value="${e?.month ?? addMonths(next1, 1)}"/>
+      <span class="money-input"><b>R$</b><input class="x-amount" inputmode="decimal" aria-label="Valor" placeholder="2.000" value="${e ? num(e.amount) : ""}"/></span>
+      <button type="button" class="icon x-rm" aria-label="Remover aporte extra" title="Remover">✕</button>
+      <input class="x-note" maxlength="30" aria-label="Descrição" placeholder="Descrição (opcional): 13º, bônus…" value="${esc(e?.note ?? "")}"/>
+      <label class="switch x-yearly-l"><input type="checkbox" class="x-yearly" ${e?.yearly ? "checked" : ""}/><span></span>Todo ano</label>`;
+    row.querySelector(".x-rm")!.addEventListener("click", () => row.remove());
+    list.append(row);
+    return row;
+  };
+  for (const e of (g?.extras ?? []).slice().sort((a, b) => a.month.localeCompare(b.month))) addExtra(e);
+  form.querySelector("#x-add")!.addEventListener("click", () => addExtra().querySelector<HTMLInputElement>(".x-amount")!.focus());
   form.querySelectorAll<HTMLButtonElement>("[data-base]").forEach((b) =>
     b.addEventListener("click", () => {
       base = b.dataset.base as Goal["base"];
@@ -200,6 +237,19 @@ function goalModal(r: Report, g: Goal | null, done: () => void) {
       err.textContent = "Informe o valor e o mês da meta.";
       return;
     }
+    const extras: GoalExtra[] = [];
+    for (const row of list.querySelectorAll<HTMLElement>(".extra-row")) {
+      const q = <T extends HTMLInputElement>(c: string) => row.querySelector<T>(c)!;
+      const month = q(".x-month").value;
+      const amount = parseNum(q(".x-amount").value) ?? 0;
+      if (!amount && !q(".x-note").value.trim()) continue; // linha vazia: ignora
+      if (!/^\d{4}-\d{2}$/.test(month) || amount <= 0) {
+        err.hidden = false;
+        err.textContent = "Cada aporte extra precisa de mês e valor.";
+        return;
+      }
+      extras.push({ id: row.dataset.id!, month, amount, yearly: q(".x-yearly").checked || undefined, note: q(".x-note").value.trim() || undefined });
+    }
     const next: Goal = {
       id: g?.id ?? crypto.randomUUID(),
       createdAt: g?.createdAt ?? new Date().toISOString(),
@@ -210,9 +260,10 @@ function goalModal(r: Report, g: Goal | null, done: () => void) {
       monthly: Math.max(0, parseNum(f("monthly")) ?? 0),
       annualReturn: Math.min(100, Math.max(-50, parseNum(f("annualReturn")) ?? 0)),
       real: (form.elements.namedItem("real") as HTMLInputElement).checked,
+      extras: extras.length ? extras : undefined,
     };
-    const list = await loadGoals();
-    goals = g ? list.map((x) => (x.id === g.id ? next : x)) : [...list, next];
+    const all = await loadGoals();
+    goals = g ? all.map((x) => (x.id === g.id ? next : x)) : [...all, next];
     await saveGoals();
     m.close();
     done();
