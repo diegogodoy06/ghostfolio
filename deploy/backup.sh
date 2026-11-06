@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Backup diário: banco do Ghostfolio, simulação/metas, estado da sincronização e extratos.
+# Backup diário: banco do Ghostfolio e do Firefly III, simulação/metas, estado da sincronização e extratos.
 # Guarda os últimos 14 em backups/. Uso: deploy/backup.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -11,6 +11,11 @@ for v in relatorios-data sync-data; do
   docker run --rm -v "${COMPOSE_PROJECT_NAME}_${v}:/v:ro" -v "$PWD/$DEST:/out" alpine tar -C /v -czf "/out/$v.tgz" .
 done
 tar -czf "$DEST/extratos.tgz" extratos
+if docker ps --format '{{.Names}}' | grep -qx ff-db; then
+  docker exec ff-db pg_dump -U firefly -d firefly -Fc > "$DEST/firefly.dump"
+  docker run --rm -v firefly_upload:/v:ro -v "$PWD/$DEST:/out" alpine tar -C /v -czf /out/firefly-upload.tgz .
+  cp deploy/firefly/.env "$DEST/firefly.env"
+fi
 chmod -R go-rwx backups
 ls -1dt backups/2* | tail -n +15 | xargs -r rm -rf
 echo "$(date -u +%FT%TZ) backup ok: $DEST ($(du -sh "$DEST" | cut -f1))"

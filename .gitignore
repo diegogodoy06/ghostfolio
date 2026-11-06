@@ -49,3 +49,6 @@ testem.log
 # System Files
 .DS_Store
 Thumbs.db
+
+# Segredos do Firefly III no servidor
+deploy/firefly/.env

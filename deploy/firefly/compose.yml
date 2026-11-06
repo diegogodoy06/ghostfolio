@@ -1,0 +1,76 @@
+# Firefly III (controle financeiro) + Data Importer, separado do Ghostfolio.
+# Segredos e domínios ficam em deploy/firefly/.env (gerado por setup.sh, fora do git).
+# O proxy (Nginx Proxy Manager) encaminha FF_DOMAIN → <ip>:3335 e IMPORTER_DOMAIN → <ip>:3336.
+name: firefly
+
+services:
+  firefly:
+    image: fireflyiii/core:latest
+    container_name: ff-app
+    restart: unless-stopped
+    depends_on: [db]
+    ports: ["3335:8080"]
+    volumes:
+      - upload:/var/www/html/storage/upload
+    environment:
+      APP_ENV: production
+      APP_KEY: ${FF_APP_KEY:?rode setup.sh}
+      APP_URL: https://${FF_DOMAIN}
+      SITE_OWNER: ${FF_SITE_OWNER:-}
+      TRUSTED_PROXIES: "**"
+      TZ: America/Sao_Paulo
+      DEFAULT_LANGUAGE: pt_BR
+      DEFAULT_LOCALE: equal
+      LOG_CHANNEL: stdout
+      APP_LOG_LEVEL: notice
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: firefly
+      DB_USERNAME: firefly
+      DB_PASSWORD: ${FF_DB_PASSWORD:?rode setup.sh}
+      STATIC_CRON_TOKEN: ${FF_CRON_TOKEN:?rode setup.sh}
+      ENABLE_EXTERNAL_RATES: "true"
+
+  db:
+    image: postgres:16-alpine
+    container_name: ff-db
+    restart: unless-stopped
+    volumes:
+      - db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: firefly
+      POSTGRES_USER: firefly
+      POSTGRES_PASSWORD: ${FF_DB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "firefly"]
+      interval: 10s
+      retries: 5
+
+  importer:
+    image: fireflyiii/data-importer:latest
+    container_name: ff-importer
+    restart: unless-stopped
+    depends_on: [firefly]
+    ports: ["3336:8080"]
+    environment:
+      FIREFLY_III_URL: http://firefly:8080
+      VANITY_URL: https://${FF_DOMAIN}
+      TRUSTED_PROXIES: "**"
+      TZ: America/Sao_Paulo
+      LOG_CHANNEL: stdout
+
+  # Recorrências, lembretes de contas e orçamentos automáticos rodam com o cron diário.
+  cron:
+    image: alpine:3.20
+    container_name: ff-cron
+    restart: unless-stopped
+    depends_on: [firefly]
+    environment:
+      TOKEN: ${FF_CRON_TOKEN}
+    command: >-
+      sh -c 'echo "0 3 * * * wget -qO- http://firefly:8080/api/v1/cron/$$TOKEN >/dev/null 2>&1" | crontab - && crond -f -L /dev/stdout'
+
+volumes:
+  upload:
+  db:

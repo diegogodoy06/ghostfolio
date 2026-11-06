@@ -10,5 +10,10 @@ if ! git merge --ff-only --quiet origin/main; then
 fi
 docker compose pull --quiet --ignore-buildable
 docker compose up -d --build --remove-orphans
+# Firefly III (controle financeiro), se instalado com deploy/firefly/setup.sh
+if [ -f deploy/firefly/.env ]; then
+  docker compose --project-directory deploy/firefly -f deploy/firefly/compose.yml pull --quiet
+  docker compose --project-directory deploy/firefly -f deploy/firefly/compose.yml up -d --remove-orphans
+fi
 docker image prune -f >/dev/null
 echo "$(date -u +%FT%TZ) atualização ok: $(git log --oneline -1)"
