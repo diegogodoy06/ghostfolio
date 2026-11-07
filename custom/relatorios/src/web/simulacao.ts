@@ -248,7 +248,7 @@ function renderSimBody(r: Report) {
   const cats = res.categories.filter((c) => c.final > 0.005);
   simChart = new Chart(document.getElementById("sim-donut") as HTMLCanvasElement, {
     type: "doughnut",
-    data: { labels: cats.map((c) => c.name), datasets: [{ data: cats.map((c) => c.final), backgroundColor: cats.map((c) => colorOf(c.name)), borderColor: "#1d1d1d", borderWidth: 2 }] },
+    data: { labels: cats.map((c) => c.name), datasets: [{ data: cats.map((c) => c.final), backgroundColor: cats.map((c) => colorOf(c.name)), borderColor: "#141615", borderWidth: 2 }] },
     options: {
       cutout: "68%",
       maintainAspectRatio: false,

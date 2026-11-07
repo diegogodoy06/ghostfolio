@@ -1,11 +1,11 @@
 // Peças de interface compartilhadas: formatação, cores, modal animado, skeletons e avisos.
 
-export const PALETTE = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#008300", "#e66767", "#898781"];
+export const PALETTE = ["#5ab8f0", "#f07a4f", "#43d66b", "#f3c623", "#e562a8", "#8b8ff8", "#2fb5a4", "#f04f55", "#8a8f8c"];
 export const CATEGORY_COLOR: Record<string, string> = {
   Ações: PALETTE[0]!, FIIs: PALETTE[1]!, Fiagros: PALETTE[2]!, ETFs: "#4bb4b0", BDRs: PALETTE[3]!, Exterior: PALETTE[4]!,
   "Tesouro Direto": PALETTE[5]!, "Renda Fixa": PALETTE[6]!, Cripto: PALETTE[7]!, Outros: PALETTE[8]!,
 };
-export const ACCENT = "#36cfcc";
+export const ACCENT = "#43d66b";
 export const colorOf = (category: string) => CATEGORY_COLOR[category] ?? PALETTE[8]!;
 
 /** "Vista do Apresentador": esconde valores absolutos e quantidades (percentuais continuam). */

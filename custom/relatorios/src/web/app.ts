@@ -9,15 +9,26 @@ import { mountSimSummary, renderCarteiraSim, simOutlook } from "./simulacao";
 import { openClaudeModal } from "./claude";
 import { mountGoalsSummary, renderMetas } from "./metas";
 import { openExtratosModal } from "./extratos";
-import { cachedOverview, clearFinCache, getOverview, hubNumbers, mountFinSummary, renderFinancas } from "./financas";
+import { cachedOverview, clearFinCache, finView, getOverview, hubNumbers, mountFinSummary, renderFinancas, setFinView } from "./financas";
 import { mountPlanSummary } from "./plano";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
-Chart.defaults.color = "rgba(255,255,255,0.7)";
+Chart.defaults.color = "rgba(243,245,244,0.55)";
+Chart.defaults.plugins.tooltip.backgroundColor = "rgba(24,26,25,0.96)";
+Chart.defaults.plugins.tooltip.borderColor = "rgba(255,255,255,0.12)";
+Chart.defaults.plugins.tooltip.borderWidth = 1;
+Chart.defaults.plugins.tooltip.padding = 10;
+Chart.defaults.plugins.tooltip.cornerRadius = 10;
+Chart.defaults.plugins.tooltip.titleColor = "#f3f5f4";
+Chart.defaults.plugins.tooltip.bodyColor = "rgba(243,245,244,0.8)";
+Chart.defaults.plugins.legend.labels.usePointStyle = true;
+Chart.defaults.plugins.legend.labels.pointStyle = "rectRounded";
+Chart.defaults.plugins.legend.labels.boxWidth = 8;
+Chart.defaults.plugins.legend.labels.boxHeight = 8;
 // Animação curta só na entrada; dados mudam sem "crescer do zero".
 Chart.defaults.animation = { duration: 450, easing: "easeOutQuart" };
-Chart.defaults.borderColor = "rgba(255,255,255,0.12)";
-Chart.defaults.font.family = '"Inter", Roboto, "Helvetica Neue", sans-serif';
+Chart.defaults.borderColor = "rgba(255,255,255,0.06)";
+Chart.defaults.font.family = '"Manrope", "Inter", system-ui, sans-serif';
 // Celular: letras dos eixos e legendas um pouco menores.
 if (isMobile()) Chart.defaults.font.size = 11;
 
@@ -65,7 +76,8 @@ const state = {
   realMode: saved("rel.real", "0") === "1",
   bench: new Set(saved("rel.bench", "carteira,cdi,ibov").split(",")),
   account: saved("rel.account", ""),
-  scope: (["tudo", "carteira", "reserva"].includes(saved("rel.scope", "carteira")) ? saved("rel.scope", "carteira") : "carteira") as Report["scope"],
+  // "Tudo" é o padrão (chave nova para valer também para quem já tinha escolhido outro recorte).
+  scope: (["tudo", "carteira", "reserva"].includes(saved("rel.scope.v2", "tudo")) ? saved("rel.scope.v2", "tudo") : "tudo") as Report["scope"],
   incomeRange: saved("rel.incomeRange", "24"),
   report: null as Report | null,
 };
@@ -129,14 +141,43 @@ function fillAccounts() {
   const accs = state.report!.accounts;
   sel.innerHTML = `<option value="">Consolidado</option>` + accs.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("");
   sel.value = state.account;
+  syncSwitcher();
+}
+
+/** Cartão de conta no topo do menu: nome da conta escolhida e quantas existem. */
+function syncSwitcher() {
+  const accs = state.report?.accounts ?? [];
+  const name = accs.find((a) => a.id === state.account)?.name ?? "Consolidado";
+  document.getElementById("acc-name")!.textContent = name;
+  document.getElementById("acc-initial")!.textContent = name.slice(0, 1).toUpperCase();
+  document.getElementById("acc-sub")!.textContent = state.account ? "uma conta" : `${accs.length} conta${accs.length === 1 ? "" : "s"} juntas`;
+}
+
+const WEEK = new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "numeric", month: "short" });
+/** "sáb., 7 de nov. · atualizado há 3 min" no cabeçalho. */
+function pageMeta(r: Report | null) {
+  const el = document.getElementById("page-meta")!;
+  if (!r) return void (el.innerHTML = "");
+  const mins = Math.max(0, Math.round((Date.now() - new Date(r.generatedAt).getTime()) / 60000));
+  const ago = mins < 1 ? "agora" : mins < 60 ? `há ${mins} min` : `há ${Math.round(mins / 60)} h`;
+  el.innerHTML = `<span class="ph-date">${esc(WEEK.format(new Date()))}</span><span class="sync-pill"><i></i>atualizado ${ago}</span>`;
+}
+
+/** Menu lateral: aba ativa e as vistas das Finanças abertas quando ela está ativa. */
+function syncSidebar() {
+  document.querySelectorAll<HTMLButtonElement>(".tabs button[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
+  const sub = document.getElementById("fin-sub")!;
+  sub.classList.toggle("open", state.tab === "financas");
+  sub.querySelectorAll<HTMLButtonElement>("[data-finview]").forEach((b) => b.setAttribute("aria-current", String(state.tab === "financas" && b.dataset.finview === finView())));
 }
 
 /** `animate: false` = troca de filtro na mesma tela: sem a animação de entrada das seções. */
 function render(animate = true) {
   charts.forEach((c) => c.destroy());
   charts = [];
-  document.querySelectorAll<HTMLButtonElement>(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
+  syncSidebar();
   const r = state.report;
+  pageMeta(r);
   if (!r) return;
   if (!r.daily.length) {
     main.innerHTML =
@@ -147,7 +188,7 @@ function render(animate = true) {
     return;
   }
   document.getElementById("page-title")!.textContent = TITLES[state.tab] + (state.tab === "carteira" && state.carteiraMode === "sim" ? " · simulação" : "");
-  document.title = `${TITLES[state.tab]} · Ghostfolio`;
+  document.title = `${TITLES[state.tab]} · Hub`;
   main.classList.remove("enter");
   if (r.ghostfolioRestricted) {
     main.innerHTML = `<div class="card notice-card"><h2 style="margin:0 0 6px">A “Vista do Apresentador” está ligada no Ghostfolio</h2>
@@ -219,7 +260,7 @@ function donut(canvas: HTMLCanvasElement, labels: string[], values: number[], co
   charts.push(
     new Chart(canvas, {
       type: "doughnut",
-      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: "#191919", borderWidth: 2 }] },
+      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: "#141615", borderWidth: 2 }] },
       options: {
         cutout: "68%",
         maintainAspectRatio: false,
@@ -345,7 +386,7 @@ function renderResumo(r: Report) {
           label: b.label,
           data: rebased(b.key === "carteira" ? idx : r.benchmarks[b.key]!.points, days, from, defl),
           borderColor: b.color,
-          backgroundColor: b.key === "carteira" ? fadeFill("54, 207, 204", 0.22) : b.color,
+          backgroundColor: b.key === "carteira" ? fadeFill("67, 214, 107", 0.22) : b.color,
           fill: b.key === "carteira" ? "origin" : false,
           borderWidth: b.key === "carteira" ? 2.5 : 1.75,
           pointRadius: 0,
@@ -371,7 +412,7 @@ function renderResumo(r: Report) {
       data: {
         labels: eq.map((p) => dateBR(p.date)),
         datasets: [
-          { label: "Patrimônio", data: eq.map((p) => p.value), borderColor: "#36cfcc", backgroundColor: fadeFill("54, 207, 204", 0.25), fill: true, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 },
+          { label: "Patrimônio", data: eq.map((p) => p.value), borderColor: "#43d66b", backgroundColor: fadeFill("67, 214, 107", 0.22), fill: true, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 },
           { label: "Investido", data: eq.map((p) => p.invested), borderColor: "#858a96", borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0 },
         ],
       },
@@ -603,10 +644,10 @@ function renderProventos(r: Report) {
     </section>
     <section class="split">
       <div class="card"><h2>Quem mais pagou (12 meses)</h2><div class="bars">${top
-        .map(([t, v]) => `<div class="item"><span>${esc(t)}</span><div class="track"><div class="fill" style="background:#36cfcc;left:0;width:${(v / topMax) * 100}%"></div></div><span class="v">${money(v)}</span></div>`)
+        .map(([t, v]) => `<div class="item"><span>${esc(t)}</span><div class="track"><div class="fill" style="background:#43d66b;left:0;width:${(v / topMax) * 100}%"></div></div><span class="v">${money(v)}</span></div>`)
         .join("")}</div></div>
       <div class="card"><h2>Por tipo</h2>${legendList([...byType.entries()].sort((a, b) => b[1] - a[1]).map(([t, v], j) => ({ label: t, value: v, weight: v / (typeTotal || 1), color: PALETTE[j % PALETTE.length]! })))}
-        <h3>Por ano</h3>${legendList([...byYear.entries()].sort().reverse().map(([yy, v]) => ({ label: yy, value: v, weight: v / (typeTotal || 1), color: "#36cfcc" })))}</div>
+        <h3>Por ano</h3>${legendList([...byYear.entries()].sort().reverse().map(([yy, v]) => ({ label: yy, value: v, weight: v / (typeTotal || 1), color: "#43d66b" })))}</div>
     </section>
     <section class="card"><h2>Últimos lançamentos</h2><div class="scroll"><table class="inc-table"><thead><tr><th>Data</th><th>Ativo</th><th>Tipo</th><th>Valor</th></tr></thead><tbody>${[...r.incomes]
       .reverse()
@@ -720,6 +761,7 @@ document.addEventListener("click", () => {
 document.getElementById("account")!.addEventListener("change", (e) => {
   state.account = (e.target as HTMLSelectElement).value;
   save("rel.account", state.account);
+  syncSwitcher();
   load();
 });
 function updateScopeButtons() {
@@ -730,7 +772,7 @@ document.querySelectorAll<HTMLButtonElement>("#scope button").forEach((b) =>
   b.addEventListener("click", () => {
     if (b.dataset.scope === state.scope) return;
     state.scope = b.dataset.scope as Report["scope"];
-    save("rel.scope", state.scope);
+    save("rel.scope.v2", state.scope);
     updateScopeButtons();
     load();
   }),
@@ -739,8 +781,16 @@ document.querySelectorAll<HTMLButtonElement>("#scope button").forEach((b) =>
 // voltam para o cabeçalho da página.
 function placeActions() {
   const group = document.getElementById("actions")!;
-  if (isMobile()) document.querySelector(".gf-toolbar")!.insertBefore(group, document.getElementById("gf-menu"));
-  else document.querySelector(".top-actions")!.append(group);
+  const sw = document.querySelector<HTMLElement>(".sb-switch")!;
+  if (isMobile()) {
+    document.querySelector(".topbar")!.insertBefore(group, document.getElementById("gf-menu"));
+    document.querySelector(".top-actions")!.prepend(sw);
+    sw.classList.add("mobile");
+  } else {
+    document.querySelector(".top-actions")!.append(group);
+    document.querySelector(".sb-brand")!.after(sw);
+    sw.classList.remove("mobile");
+  }
 }
 placeActions();
 MOBILE_QUERY.addEventListener("change", () => {
@@ -749,15 +799,29 @@ MOBILE_QUERY.addEventListener("change", () => {
 });
 document.getElementById("refresh")!.addEventListener("click", () => load(true));
 document.getElementById("extratos")!.addEventListener("click", openExtratosModal);
-document.getElementById("logout")!.addEventListener("click", async (e) => {
-  e.preventDefault();
-  await fetch("/api/logout", { method: "POST" });
-  location.reload(); // limpa simulação e metas carregadas do usuário anterior
-});
-document.getElementById("claude")!.addEventListener("click", () => {
-  if (state.report && !state.report.ghostfolioRestricted) void openClaudeModal(state.report);
-  else toast("Carregue a carteira primeiro");
-});
+for (const id of ["logout", "sb-logout"])
+  document.getElementById(id)!.addEventListener("click", async (e) => {
+    e.preventDefault();
+    await fetch("/api/logout", { method: "POST" });
+    location.reload(); // limpa simulação e metas carregadas do usuário anterior
+  });
+for (const id of ["claude", "claude-ask"])
+  document.getElementById(id)!.addEventListener("click", () => {
+    if (state.report && !state.report.ghostfolioRestricted) void openClaudeModal(state.report);
+    else toast("Carregue a carteira primeiro");
+  });
+// Vistas das Finanças direto pelo menu lateral.
+document.querySelectorAll<HTMLButtonElement>("[data-finview]").forEach((b) =>
+  b.addEventListener("click", () => {
+    setFinView(b.dataset.finview!);
+    if (state.tab !== "financas") {
+      state.tab = "financas";
+      history.replaceState(null, "", "#financas");
+    }
+    render();
+  }),
+);
+setInterval(() => pageMeta(state.report), 60_000);
 // Ocultar valores: só neste aparelho. (A "Vista do Apresentador" do Ghostfolio apaga os valores
 // na própria API, o que zeraria os relatórios; por isso este modo é independente.)
 privacy.on = saved("rel.privacy", "0") === "1";

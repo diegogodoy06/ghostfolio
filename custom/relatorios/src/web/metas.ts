@@ -143,7 +143,7 @@ function goalChart(canvas: HTMLCanvasElement, r: Report, g: Goal) {
   };
   const extraAt = months.map((m) => (m > today ? extraIn(g, m) : 0));
   const datasets: any[] = [
-    { label: "Patrimônio", data: months.map((m) => hist.get(m) ?? null), borderColor: ACCENT, backgroundColor: fadeFill("54, 207, 204", 0.22), fill: true, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, spanGaps: true },
+    { label: "Patrimônio", data: months.map((m) => hist.get(m) ?? null), borderColor: ACCENT, backgroundColor: fadeFill("67, 214, 107", 0.22), fill: true, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, spanGaps: true },
     { label: `Com ${money(g.monthly)}/mês${g.extras?.length ? " + extras" : ""}`, data: ahead(g.monthly), borderColor: ACCENT, borderDash: [6, 4], borderWidth: 2, pointRadius: extraAt.map((x) => (x > 0 ? 2.5 : 0)), pointBackgroundColor: ACCENT, pointHoverRadius: 4 },
   ];
   if (p.status === "abaixo") datasets.push({ label: `Necessário: ${money(p.required)}/mês`, data: ahead(p.required).map((v, i) => (months[i]! > g.date ? null : v)), borderColor: "#c98500", borderDash: [2, 4], borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 });

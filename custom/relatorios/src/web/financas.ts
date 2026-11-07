@@ -49,6 +49,13 @@ const PAYMENT = /pagamento|pagto|pgto|pag\.? ?fatura|fatura paga|cr[eé]dito de 
 const CARD_PAYMENT = /fatura|cart[aã]o|cartao|cobranca|cobrança/i;
 
 let rerender: () => void = () => {};
+/** Vista atual (o menu lateral também troca). */
+export const finView = () => view;
+export function setFinView(v: string) {
+  if (!VIEWS.some(([x]) => x === v)) return;
+  view = v as View;
+  store(VKEY, view);
+}
 const store = (k: string, v: string) => {
   try {
     sessionStorage.setItem(k, v);
@@ -63,6 +70,7 @@ export async function renderFinancas(r: Report, main: HTMLElement, charts: Chart
     charts.splice(0).forEach((c) => c.destroy());
     void renderFinancas(r, main, charts);
   };
+  document.querySelectorAll<HTMLElement>("[data-finview]").forEach((x) => x.setAttribute("aria-current", String(x.dataset.finview === view)));
   const st = (await fetch("/api/fin").then((x) => (x.ok ? x.json() : null))) as { connected: boolean; publicUrl: string } | null;
   if (!main.isConnected) return;
   if (!st?.connected) return renderConnect(main, st?.publicUrl ?? "");
