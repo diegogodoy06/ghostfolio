@@ -19,7 +19,7 @@ interface Card extends Account {
   closed: Cycle | null;
   future: { month: string; value: number }[];
 }
-interface Overview {
+export interface Overview {
   month: string;
   publicUrl: string;
   accounts: Account[];

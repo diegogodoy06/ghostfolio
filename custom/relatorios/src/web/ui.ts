@@ -193,3 +193,54 @@ export function xTicks(maxDesktop = 6): any {
     },
   };
 }
+
+// ---------- Gráficos no estilo do painel: barras hachuradas e destaque ----------
+
+/** Preenchimento listrado na diagonal (barras "apagadas"). */
+export function hatch(color = "rgba(255,255,255,0.32)", bg = "rgba(255,255,255,0.03)") {
+  const c = document.createElement("canvas");
+  const s = 8 * (window.devicePixelRatio || 1);
+  c.width = c.height = s;
+  const g = c.getContext("2d")!;
+  g.fillStyle = bg;
+  g.fillRect(0, 0, s, s);
+  g.strokeStyle = color;
+  g.lineWidth = s / 8;
+  g.beginPath();
+  for (const o of [-s, 0, s]) {
+    g.moveTo(o, s);
+    g.lineTo(o + s, 0);
+  }
+  g.stroke();
+  return g.createPattern(c, "repeat")!;
+}
+
+/**
+ * Plugin: escreve o valor num selo acima da barra destacada (`options.plugins.highlight.index`).
+ */
+export const highlightPlugin = {
+  id: "highlight",
+  afterDatasetsDraw(chart: any, _args: unknown, opts: { index?: number; text?: string }) {
+    if (opts?.index == null || !opts.text) return;
+    const meta = chart.getDatasetMeta(0);
+    const el = meta?.data?.[opts.index];
+    if (!el) return;
+    const ctx = chart.ctx as CanvasRenderingContext2D;
+    ctx.save();
+    ctx.font = '600 11px "Manrope", sans-serif';
+    const w = ctx.measureText(opts.text).width + 14;
+    const x = el.x - w / 2;
+    const y = Math.max(chart.chartArea.top - 2, el.y - 30);
+    ctx.fillStyle = "rgba(30,33,31,0.96)";
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, 20, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#f3f5f4";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(opts.text, el.x, y + 10);
+    ctx.restore();
+  },
+};
