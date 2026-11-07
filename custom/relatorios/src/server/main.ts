@@ -15,6 +15,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpServer } from "./mcp";
 import { sameToken, seal, sealForSync, unseal, userDir, userIdOf } from "./users";
 import { FIREFLY_PUBLIC_URL, FireflyError, type ImportRow, accounts as finAccounts, categoryNames, existing, monthlyTotals, ff, importRows, overview, parseStatement, readConfig, sealToken, tokenOf, writeConfig } from "./financas";
+import { type NewTx, cardBooks, createTx, deleteTx, forecast, monthTransactions, suggestPlanned, updateTx, validPlanned } from "./fin-plan";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
@@ -262,7 +263,7 @@ const server = http.createServer(async (req, res) => {
       const cfg = readConfig(s.dir);
       const fin = tokenOf(cfg);
       if (url.pathname === "/api/fin" && req.method === "GET") {
-        return send(res, 200, { connected: !!fin, publicUrl: FIREFLY_PUBLIC_URL, cards: cfg.cards ?? {} });
+        return send(res, 200, { connected: !!fin, publicUrl: FIREFLY_PUBLIC_URL, cards: cfg.cards ?? {}, budget: cfg.budget ?? {} });
       }
       if (url.pathname === "/api/fin/token") {
         if (req.method === "DELETE") {
@@ -300,14 +301,75 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, await monthlyTotals(fin, from, to));
       }
       if (url.pathname === "/api/fin/cards" && req.method === "PUT") {
-        const { id, closing, due } = (await readBody(req)) as { id?: string; closing?: number; due?: number };
+        const { id, closing, due, limit } = (await readBody(req)) as { id?: string; closing?: number; due?: number; limit?: number | null };
         const day = (n: unknown) => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 31;
         if (!id || !/^\d+$/.test(id)) return send(res, 400, { error: "cartão inválido" });
         cfg.cards ??= {};
         if (closing == null && due == null) delete cfg.cards[id];
         else if (!day(closing) || !day(due)) return send(res, 400, { error: "Dias de fechamento e vencimento entre 1 e 31." });
-        else cfg.cards[id] = { closing: closing!, due: due! };
+        else cfg.cards[id] = { closing: closing!, due: due!, ...(limit && Number(limit) > 0 ? { limit: Math.round(Number(limit) * 100) / 100 } : {}) };
         writeConfig(s.dir, cfg);
+        return send(res, 200, { ok: true });
+      }
+      if (url.pathname === "/api/fin/books") {
+        const n = (k: string, d: number, max: number) => Math.min(max, Math.max(0, Number(url.searchParams.get(k) ?? d) || 0));
+        return send(res, 200, await cardBooks(fin, cfg, await finAccounts(fin), n("back", 12, 24), n("ahead", 12, 24)));
+      }
+      if (url.pathname === "/api/fin/forecast") return send(res, 200, await forecast(fin, cfg, Math.min(24, Math.max(1, Number(url.searchParams.get("ahead") ?? 12) || 12))));
+      if (url.pathname === "/api/fin/budget" && req.method === "PUT") {
+        const { category, amount } = (await readBody(req)) as { category?: string; amount?: number | null };
+        if (!category || typeof category !== "string") return send(res, 400, { error: "categoria inválida" });
+        cfg.budget ??= {};
+        if (amount == null || !(Number(amount) > 0)) delete cfg.budget[category];
+        else cfg.budget[category.slice(0, 120)] = Math.round(Number(amount) * 100) / 100;
+        writeConfig(s.dir, cfg);
+        return send(res, 200, { ok: true });
+      }
+      if (url.pathname === "/api/fin/planned") {
+        if (req.method === "GET") return send(res, 200, { items: cfg.planned ?? [], suggestions: await suggestPlanned(fin, cfg) });
+        if (req.method === "PUT") {
+          const p = validPlanned(await readBody(req));
+          if (!p) return send(res, 400, { error: "Informe descrição e valor." });
+          const list = (cfg.planned ?? []).filter((x) => x.id !== p.id);
+          if (list.length >= 300) return send(res, 400, { error: "Limite de previstos atingido." });
+          cfg.planned = [...list, p];
+          writeConfig(s.dir, cfg);
+          return send(res, 200, p);
+        }
+        if (req.method === "DELETE") {
+          const id = url.searchParams.get("id");
+          cfg.planned = (cfg.planned ?? []).filter((x) => x.id !== id);
+          writeConfig(s.dir, cfg);
+          return send(res, 200, { ok: true });
+        }
+      }
+      if (url.pathname === "/api/fin/tx" && req.method === "GET") {
+        const month = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") ?? "") ? url.searchParams.get("month")! : new Date().toISOString().slice(0, 7);
+        return send(res, 200, await monthTransactions(fin, month));
+      }
+      if (url.pathname === "/api/fin/tx" && req.method === "POST") {
+        const b = (await readBody(req)) as Partial<NewTx>;
+        const ok =
+          (b.kind === "expense" || b.kind === "income" || b.kind === "transfer") &&
+          /^\d{4}-\d{2}-\d{2}$/.test(b.date ?? "") &&
+          Number(b.amount) > 0 &&
+          typeof b.description === "string" &&
+          b.description.trim() &&
+          /^\d+$/.test(b.accountId ?? "") &&
+          (b.kind !== "transfer" || /^\d+$/.test(b.toAccountId ?? ""));
+        if (!ok) return send(res, 400, { error: "Preencha tipo, data, valor, descrição e conta." });
+        return send(res, 200, await createTx(fin, cfg, { ...(b as NewTx), amount: Number(b.amount), description: b.description!.trim() }));
+      }
+      const txId = /^\/api\/fin\/tx\/(\d+)$/.exec(url.pathname)?.[1];
+      if (txId && req.method === "PUT") {
+        const b = (await readBody(req)) as { description?: string; amount?: number; date?: string; category?: string | null };
+        if (b.date && !/^\d{4}-\d{2}-\d{2}$/.test(b.date)) return send(res, 400, { error: "data inválida" });
+        if (b.amount != null && !(Number(b.amount) > 0)) return send(res, 400, { error: "valor inválido" });
+        await updateTx(fin, txId, { description: b.description, amount: b.amount == null ? undefined : Number(b.amount), date: b.date, category: b.category === undefined ? undefined : b.category || null });
+        return send(res, 200, { ok: true });
+      }
+      if (txId && req.method === "DELETE") {
+        await deleteTx(fin, txId);
         return send(res, 200, { ok: true });
       }
       if (url.pathname === "/api/fin/parse" && req.method === "POST") {

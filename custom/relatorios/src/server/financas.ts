@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { seal, unseal } from "./users";
+import { occurrencesIn } from "./fin-plan";
 
 export const FIREFLY_URL = (process.env.FIREFLY_URL ?? "http://host.docker.internal:3335").replace(/\/$/, "");
 export const FIREFLY_PUBLIC_URL = (process.env.FIREFLY_PUBLIC_URL ?? "").replace(/\/$/, "");
@@ -21,13 +22,19 @@ export interface CardConfig {
   closing: number;
   /** Dia do vencimento. */
   due: number;
+  /** Limite de compras (opcional). */
+  limit?: number;
 }
-interface FinConfig {
+export interface FinConfig {
   token?: string;
   connectedAt?: string;
   cards?: Record<string, CardConfig>;
   /** Conta do arquivo (banco/agência/conta do OFX) → conta do Firefly escolhida na última importação. */
   accounts?: Record<string, string>;
+  /** Lançamentos previstos (contas fixas, assinaturas, salário…). */
+  planned?: import("./fin-plan").Planned[];
+  /** Orçamento mensal por categoria (meta de gasto ou de entrada). */
+  budget?: Record<string, number>;
 }
 const cfgFile = (dir: string) => path.join(dir, "financas.json");
 export function readConfig(dir: string): FinConfig {
@@ -156,18 +163,18 @@ export const accountTransactions = async (token: string, id: string, start: stri
 
 // ---------- datas ----------
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
-const ymd = (y: number, m: number, d: number) => {
+export const iso = (d: Date) => d.toISOString().slice(0, 10);
+export const ymd = (y: number, m: number, d: number) => {
   // Dia além do fim do mês cai no último dia (fechamento dia 31 em fevereiro…).
   const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
   return new Date(Date.UTC(y, m, Math.min(d, last)));
 };
-const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 86_400_000);
+export const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 86_400_000);
 export function monthRange(ym: string) {
   const [y, m] = ym.split("-").map(Number) as [number, number];
   return { start: iso(ymd(y, m - 1, 1)), end: iso(ymd(y, m, 0)) };
 }
-const today = () => {
+export const today = () => {
   // Data de hoje no fuso de São Paulo.
   const s = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
   return new Date(`${s}T00:00:00Z`);
@@ -196,10 +203,13 @@ export function invoiceCycles(cfg: CardConfig, ref = today()) {
 
 // ---------- visão geral ----------
 
-const PAYMENT = /pagamento|pagto|pgto|pag\.? ?fatura|fatura paga|cr[eé]dito de pagamento/i;
+export const PAYMENT = /pagamento|pagto|pgto|pag\.? ?fatura|fatura paga|cr[eé]dito de pagamento/i;
 /** "PARC 03/10", "03/10", "3 de 10", "Parcela 3/10" na descrição. */
-const INSTALLMENT = /(?:parc(?:ela)?\.?\s*)?\b(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})\b(?!\/)/i;
+export const INSTALLMENT = /(?:parc(?:ela)?\.?\s*)?\b(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})\b(?!\/)/i;
+/** Memorando de banco ("Pix Enviado Des: Fulano 07/08"): o "07/08" do fim é a data, não parcela. */
+const BANK_MEMO = /^(pix|ted|doc|transf|trans sal|compra cart|compra elo|pagto|pgto|dep |dep din|saq|saque|rent)/i;
 export function installmentOf(desc: string) {
+  if (BANK_MEMO.test(desc.trim())) return null;
   const m = INSTALLMENT.exec(desc);
   if (!m) return null;
   const n = Number(m[1]);
@@ -208,7 +218,7 @@ export function installmentOf(desc: string) {
 }
 
 /** Valor de uma fatura: compras menos estornos; pagamentos (transferências ou "PAGAMENTO") ficam de fora. */
-function invoiceTotal(txs: Tx[], cardId: string) {
+export function invoiceTotal(txs: Tx[], cardId: string) {
   let total = 0;
   for (const t of txs) {
     if (t.type === "transfer") continue;
@@ -310,6 +320,8 @@ export async function overview(token: string, cfg: FinConfig, ym: string) {
     expense: Math.round(expense * 100) / 100,
     categories: [...cats].map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 })).sort((a, b) => b.value - a.value),
     history,
+    planned: occurrencesIn(cfg.planned ?? [], ym, txs),
+    budget: cfg.budget ?? {},
     recent: txs
       .filter((t) => t.type !== "opening balance")
       .sort((a, b) => b.date.localeCompare(a.date) || Number(b.id) - Number(a.id))
@@ -611,9 +623,9 @@ export async function monthlyTotals(token: string, from: string, to: string) {
   const accs = await accounts(token);
   const cardIds = new Set(accs.filter((a) => a.card).map((a) => a.id));
   const txs = await transactions(token, monthRange(from).start, monthRange(to).end);
-  const out = new Map<string, { month: string; income: number; expense: number; categories: Record<string, number> }>();
+  const out = new Map<string, { month: string; income: number; expense: number; categories: Record<string, number>; incomes: Record<string, number> }>();
   for (let m = from; m <= to; ) {
-    out.set(m, { month: m, income: 0, expense: 0, categories: {} });
+    out.set(m, { month: m, income: 0, expense: 0, categories: {}, incomes: {} });
     const [y, mo] = m.split("-").map(Number) as [number, number];
     m = new Date(Date.UTC(y, mo, 1)).toISOString().slice(0, 7);
   }
@@ -628,11 +640,15 @@ export async function monthlyTotals(token: string, from: string, to: string) {
       if (cardIds.has(t.destinationId) && !PAYMENT.test(t.description)) {
         row.expense -= t.amount;
         row.categories[cat] = (row.categories[cat] ?? 0) - t.amount;
-      } else row.income += t.amount;
+      } else {
+        row.income += t.amount;
+        row.incomes[cat] = (row.incomes[cat] ?? 0) + t.amount;
+      }
     }
   }
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  return [...out.values()].map((m) => ({ ...m, income: r2(m.income), expense: r2(m.expense), categories: Object.fromEntries(Object.entries(m.categories).map(([k, v]) => [k, r2(v)])) }));
+  const round = (o: Record<string, number>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, r2(v)]));
+  return [...out.values()].map((m) => ({ ...m, income: r2(m.income), expense: r2(m.expense), categories: round(m.categories), incomes: round(m.incomes) }));
 }
 
 export async function categoryNames(token: string) {
