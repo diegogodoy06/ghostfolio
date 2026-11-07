@@ -157,7 +157,15 @@ export async function mountPlan(el: HTMLElement, r: Report) {
       </div>
       <button class="primary" id="plan-add">+ Meta</button>
     </div>
-    ${items.length ? `<div class="track plan-score" title="${done} de ${items.length} cumpridas"><div class="fill" style="width:${((done / items.length) * 100).toFixed(1)}%"></div></div>` : ""}
+    ${
+      items.length
+        ? `<div class="plan-tiles">
+        <div class="plan-tile hero"><span class="ring" style="--p:${Math.round((done / items.length) * 100)}"><b>${Math.round((done / items.length) * 100)}%</b></span><div><span class="muted small">Cumpridas</span><b>${done}<small>/${items.length}</small></b></div></div>
+        ${phase === "atual" ? [["ok", "No caminho", "good"], ["atencao", "Em atenção", "warn"], ["fora", "Fora da meta", "bad"]].map(([k, l, t]) => `<div class="plan-tile"><span class="muted small"><i class="dot-${t}"></i>${l}</span><b>${counts[k as PlanStatus] ?? 0}</b></div>`).join("") : ""}
+      </div>
+      <div class="meter-wrap plan-meter" style="--p:${((done / items.length) * 100).toFixed(1)}" title="${done} de ${items.length} cumpridas"><div class="meter"></div></div>`
+        : ""
+    }
     ${
       items.length
         ? groups

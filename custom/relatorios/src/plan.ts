@@ -47,8 +47,8 @@ export interface PlanFile {
 }
 
 export const AREAS: { id: string; label: string; color: string }[] = [
-  { id: "financas", label: "Finanças", color: "#36cfcc" },
-  { id: "saude", label: "Saúde e treino", color: "#199e70" },
+  { id: "financas", label: "Finanças", color: "#43d66b" },
+  { id: "saude", label: "Saúde e treino", color: "#2fb5a4" },
   { id: "carreira", label: "Carreira e trabalho", color: "#3987e5" },
   { id: "estudos", label: "Estudos", color: "#9085e9" },
   { id: "pessoal", label: "Pessoal", color: "#d55181" },
