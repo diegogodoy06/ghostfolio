@@ -54,6 +54,7 @@ const setYear = (y: number) => {
 };
 
 const STATUS_CLASS: Record<PlanStatus, string> = { ok: "buy", cumprida: "buy", atencao: "over", fora: "sell", "nao-cumprida": "sell", futuro: "", "sem-dados": "", aberta: "" };
+const TAG_CLASS: Record<PlanStatus, string> = { ok: "good", cumprida: "good", atencao: "warn", fora: "bad", "nao-cumprida": "bad", futuro: "", "sem-dados": "", aberta: "" };
 const FIN_ICON: Record<FinanceKind, string> = { gasto: "cash-outline", categoria: "pie-chart-outline", poupanca: "wallet-outline", guardar: "wallet-outline", aporte: "trending-up-outline", reserva: "flag-outline" };
 
 /** Sempre relê do servidor ao montar: o MCP (Claude) também pode marcar e criar metas. */
@@ -153,7 +154,7 @@ export async function mountPlan(el: HTMLElement, r: Report) {
         <div class="month-nav" role="group" aria-label="Ano">
           <button class="icon" data-y="-1" aria-label="Ano anterior">‹</button><h2>Meu ${year}</h2><button class="icon" data-y="1" aria-label="Próximo ano">›</button>
         </div>
-        <p class="muted small">${summary}</p>
+        ${items.length && phase === "atual" ? "" : `<p class="muted small">${summary}</p>`}
       </div>
       <button class="primary" id="plan-add">+ Meta</button>
     </div>
@@ -162,16 +163,15 @@ export async function mountPlan(el: HTMLElement, r: Report) {
         ? `<div class="plan-tiles">
         <div class="plan-tile hero"><span class="ring" style="--p:${Math.round((done / items.length) * 100)}"><b>${Math.round((done / items.length) * 100)}%</b></span><div><span class="muted small">Cumpridas</span><b>${done}<small>/${items.length}</small></b></div></div>
         ${phase === "atual" ? [["ok", "No caminho", "good"], ["atencao", "Em atenção", "warn"], ["fora", "Fora da meta", "bad"]].map(([k, l, t]) => `<div class="plan-tile"><span class="muted small"><i class="dot-${t}"></i>${l}</span><b>${counts[k as PlanStatus] ?? 0}</b></div>`).join("") : ""}
-      </div>
-      <div class="meter-wrap plan-meter" style="--p:${((done / items.length) * 100).toFixed(1)}" title="${done} de ${items.length} cumpridas"><div class="meter"></div></div>`
+      </div>`
         : ""
     }
     ${
       items.length
         ? groups
             .map(
-              (g) => `<div class="plan-area"><h3><span class="dot" style="background:${g.area.color}"></span>${esc(g.area.label)}<span class="muted small">${g.rows.filter((x) => isAchieved(x.e)).length}/${g.rows.length}</span></h3>
-              <div class="plan-list">${g.rows.map((x) => planRow(x.it, x.e, g.rows.length, phase)).join("")}</div></div>`,
+              (g) => `<details class="plan-area" data-area="${g.area.id}" ${closedAreas().has(g.area.id) ? "" : "open"}><summary><span class="dot" style="background:${g.area.color}"></span>${esc(g.area.label)}<span class="muted small">${g.rows.filter((x) => isAchieved(x.e)).length}/${g.rows.length}</span><span class="ico chev" style="--icon: url(icons/chevron-down.svg)"></span></summary>
+              <div class="plan-list">${g.rows.map((x) => planRow(x.it, x.e, g.rows.length, phase)).join("")}</div></details>`,
             )
             .join("")
         : `<div class="plan-empty"><p class="muted">Ideias para ${year}: tirar o passaporte, ler 12 livros, treinar todo mês, fazer uma viagem, gastar até R$ 6.000 por mês, aportar R$ 30.000 e ter 6 meses de reserva.</p>
@@ -206,8 +206,11 @@ export async function mountPlan(el: HTMLElement, r: Report) {
     toast("Retrospectiva salva");
   });
 
+  el.querySelectorAll<HTMLDetailsElement>("details.plan-area").forEach((d) => d.addEventListener("toggle", () => closedAreasMemo.set(d.dataset.area!, !d.open)));
+  el.querySelectorAll<HTMLElement>("summary button").forEach((b) => b.addEventListener("click", (e) => e.preventDefault()));
   el.querySelectorAll<HTMLElement>("[data-item]").forEach((row) => {
     const it = items.find((x) => x.id === row.dataset.item)!;
+    row.addEventListener("toggle", () => openItems.set(it.id, (row as HTMLDetailsElement).open));
     const update = async (f: (x: PlanItem) => void) => {
       f(it);
       await savePlan();
@@ -265,12 +268,44 @@ export async function mountPlan(el: HTMLElement, r: Report) {
   void mountHistory(el.querySelector<HTMLElement>("#plan-history")!, r, p, draw);
 }
 
+const memo = (key: string) => {
+  const get = () => {
+    try {
+      return new Set((sessionStorage.getItem(key) ?? "").split(",").filter(Boolean));
+    } catch {
+      return new Set<string>();
+    }
+  };
+  const set = (id: string, on: boolean) => {
+    const s = get();
+    on ? s.add(id) : s.delete(id);
+    try {
+      sessionStorage.setItem(key, [...s].join(","));
+    } catch {
+      /* sem armazenamento */
+    }
+  };
+  return { get, set };
+};
+const openItems = memo("rel.planOpen");
+const closedAreasMemo = memo("rel.planAreasClosed");
+const closedAreas = () => closedAreasMemo.get();
+
+/** Progresso curto para a linha recolhida: "3/4", "8/12 meses", "R$ 2.276 de R$ 6.000". */
+function shortProgress(it: PlanItem, e: PlanEval) {
+  if (it.kind === "feito") return it.done ? `feito em ${it.done.split("-").reverse().join("/")}` : "";
+  if (it.kind === "contagem") return `${(e.current ?? 0).toLocaleString("pt-BR")} de ${it.value.toLocaleString("pt-BR")}`;
+  if (it.kind === "mensal") return `${(it.months ?? []).length} de ${it.value} meses`;
+  return e.progress != null ? `${Math.round(Math.min(1, e.progress) * 100)}%` : "";
+}
+
 function planRow(it: PlanItem, e: PlanEval, groupSize: number, phase: Phase) {
   const life = isLife(it.kind);
   const lead =
     it.kind === "feito"
       ? `<button class="plan-check ${it.done ? "on" : ""}" aria-pressed="${!!it.done}" aria-label="${it.done ? "Desmarcar" : "Marcar como feita"}" title="${it.done ? "Desmarcar" : "Marcar como feita"}" ${phase === "futuro" ? "disabled" : ""}>✓</button>`
-      : `<span class="ico" style="--icon: url(icons/${life ? (it.kind === "contagem" ? "analytics-outline" : "calendar-outline") : FIN_ICON[it.kind as FinanceKind]}.svg)"></span>`;
+      : `<span class="plan-lead"><span class="ico" style="--icon: url(icons/${life ? (it.kind === "contagem" ? "analytics-outline" : "calendar-outline") : FIN_ICON[it.kind as FinanceKind]}.svg)"></span></span>`;
+  const quick = it.kind === "contagem" && phase !== "futuro" ? `<button class="plan-plus" data-count="1" title="Somar 1">+1</button>` : "";
   const controls =
     it.kind === "contagem" && phase !== "futuro"
       ? `<div class="plan-counter"><button class="icon" data-count="-1" aria-label="Desfazer o último">−</button><b>${e.current ?? 0}<span class="muted"> / ${it.value}</span></b><button class="primary" data-count="1">+1</button></div>`
@@ -278,21 +313,27 @@ function planRow(it: PlanItem, e: PlanEval, groupSize: number, phase: Phase) {
         ? `<div class="plan-months">${monthChips(it, phase)}</div>`
         : "";
   const bars = it.kind !== "mensal" && it.kind !== "feito" && e.bars.some((b) => b.value != null) ? miniBars(it, e) : "";
-  return `<div class="plan-item ${isAchieved(e) ? "achieved" : ""}" data-item="${esc(it.id)}">
-    <div class="plan-item-head">
+  const prog = e.progress != null && it.kind !== "feito" ? Math.min(1, e.progress) : it.kind === "feito" ? (it.done ? 1 : 0) : null;
+  const sp = shortProgress(it, e);
+  return `<details class="plan-item ${isAchieved(e) ? "achieved" : ""}" data-item="${esc(it.id)}" ${openItems.get().has(it.id) ? "open" : ""}>
+    <summary class="plan-sum">
       ${lead}
-      <b>${esc(itemTitle(it, money))}</b>
-      <span class="badge ${STATUS_CLASS[e.status]}">${PLAN_STATUS_LABEL[e.status]}</span>
-      <span class="plan-tools">
-        ${groupSize > 1 ? `<button class="icon" data-move="-1" aria-label="Subir">↑</button><button class="icon" data-move="1" aria-label="Descer">↓</button>` : ""}
-        <button class="icon plan-edit" aria-label="Editar" title="Editar">✎</button><button class="icon plan-del" aria-label="Excluir" title="Excluir">✕</button>
-      </span>
+      <span class="plan-name"><b>${esc(itemTitle(it, money))}</b>${sp ? `<small>${esc(sp)}</small>` : ""}</span>
+      ${prog != null && it.kind !== "feito" ? `<span class="plan-mini"><span class="fill ${STATUS_CLASS[e.status]}" style="width:${(prog * 100).toFixed(1)}%"></span></span>` : `<span></span>`}
+      <span class="tag ${TAG_CLASS[e.status]}">${PLAN_STATUS_LABEL[e.status]}</span>
+      ${quick || "<span></span>"}
+      <span class="ico chev" style="--icon: url(icons/chevron-down.svg)"></span>
+    </summary>
+    <div class="plan-body">
+      ${e.text || it.note ? `<p class="plan-text">${e.text}${it.note ? `${e.text ? " " : ""}<span class="muted">${esc(it.note)}</span>` : ""}</p>` : ""}
+      ${controls}
+      ${bars}
+      <div class="plan-tools">
+        ${groupSize > 1 ? `<button class="icon" data-move="-1" aria-label="Subir" title="Subir">↑</button><button class="icon" data-move="1" aria-label="Descer" title="Descer">↓</button>` : ""}
+        <button class="ghost small-btn plan-edit">Editar</button><button class="icon plan-del" aria-label="Excluir" title="Excluir">✕</button>
+      </div>
     </div>
-    ${e.progress != null && it.kind !== "feito" ? `<div class="track plan-track"><div class="fill ${STATUS_CLASS[e.status]}" style="width:${(e.progress * 100).toFixed(1)}%"></div></div>` : ""}
-    ${e.text || it.note ? `<p class="plan-text">${e.text}${it.note ? `${e.text ? " " : ""}<span class="muted">${esc(it.note)}</span>` : ""}</p>` : ""}
-    ${controls}
-    ${bars}
-  </div>`;
+  </details>`;
 }
 
 function monthChips(it: PlanItem, phase: Phase) {
@@ -341,7 +382,14 @@ async function mountHistory(el: HTMLElement, r: Report, p: PlanFile, draw: () =>
   const rows = await Promise.all(years.map(async (y) => ({ y, ...(await computeYear(r, y, p)) })));
   if (!el.isConnected) return;
   const ty = Number(thisMonth().slice(0, 4));
-  el.innerHTML = `<section class="card plan-evo"><h2>Evolução</h2>
+  const evoOpen = (() => {
+    try {
+      return sessionStorage.getItem("rel.evoOpen") === "1";
+    } catch {
+      return false;
+    }
+  })();
+  el.innerHTML = `<details class="card plan-evo" ${evoOpen ? "open" : ""}><summary><h2 style="margin:0">Evolução</h2><span class="muted small">${rows.map(({ y, evals, items }) => `${y}: ${evals.filter(isAchieved).length}/${items.length}`).join(" · ")}</span><span class="ico chev" style="--icon: url(icons/chevron-down.svg)"></span></summary>
     <div class="evo-list">${rows
       .map(({ y, items, evals }) => {
         const done = evals.filter(isAchieved).length;
@@ -357,7 +405,14 @@ async function mountHistory(el: HTMLElement, r: Report, p: PlanFile, draw: () =>
           <span class="evo-num"><b>${done}/${items.length}</b><span class="muted small">${y < ty ? "cumpridas" : y === ty ? "até agora" : "planejadas"}</span></span></button>`;
       })
       .join("")}</div>
-    <p class="note">Toque num ano para ver as metas dele. Nos anos encerrados, as metas financeiras usam o que aconteceu naquele ano; a de reserva usa o valor de hoje.</p></section>`;
+    <p class="note">Toque num ano para ver as metas dele. Nos anos encerrados, as metas financeiras usam o que aconteceu naquele ano; a de reserva usa o valor de hoje.</p></details>`;
+  el.querySelector("details")!.addEventListener("toggle", (e) => {
+    try {
+      sessionStorage.setItem("rel.evoOpen", (e.currentTarget as HTMLDetailsElement).open ? "1" : "0");
+    } catch {
+      /* sem armazenamento */
+    }
+  });
   el.querySelectorAll<HTMLButtonElement>("[data-year]").forEach((b) =>
     b.addEventListener("click", () => {
       setYear(Number(b.dataset.year));

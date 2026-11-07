@@ -95,25 +95,54 @@ export async function renderMetas(r: Report, main: HTMLElement, charts: Chart[])
       await saveGoals();
       renderMetas(r, main, charts);
     });
-    const canvas = card.querySelector("canvas");
-    if (canvas) charts.push(goalChart(canvas, r, g));
+    // Gráfico só quando o cartão abre (fechado ele não tem tamanho).
+    const det = card as HTMLDetailsElement;
+    let drawn = false;
+    const drawChart = () => {
+      if (!det.open || drawn) return;
+      const canvas = card.querySelector("canvas");
+      if (canvas) charts.push(goalChart(canvas, r, g));
+      drawn = true;
+    };
+    det.addEventListener("toggle", () => {
+      drawChart();
+      try {
+        const set = new Set((sessionStorage.getItem("rel.goalsOpen") ?? "").split(",").filter(Boolean));
+        det.open ? set.add(g.id) : set.delete(g.id);
+        sessionStorage.setItem("rel.goalsOpen", [...set].join(","));
+      } catch {
+        /* sem armazenamento */
+      }
+    });
+    drawChart();
   }
 }
 
 function goalCard(r: Report, g: Goal, index: number, count: number) {
   const value = baseValue(r, g.base) ?? 0;
   const p = planGoal(g, value);
-  return `<section class="card goal" data-goal="${esc(g.id)}">
+  let open = false;
+  try {
+    open = (sessionStorage.getItem("rel.goalsOpen") ?? "").split(",").includes(g.id);
+  } catch {
+    /* sem armazenamento */
+  }
+  return `<details class="card goal" data-goal="${esc(g.id)}" ${open ? "open" : ""}>
+    <summary class="goal-sum">
+      <span class="goal-name"><b>${esc(g.name)}</b><small>${money(g.target)} até ${monthLong(g.date)}</small></span>
+      <span class="goal-bar"><span class="plan-mini"><span class="fill" style="width:${(p.progress * 100).toFixed(1)}%"></span></span><small><b>${money(value)}</b> · ${pct(p.progress, 0)}</small></span>
+      <span class="tag ${p.status === "atingida" || p.status === "no-ritmo" ? "good" : p.status === "vencida" ? "bad" : "warn"}">${STATUS_LABEL[p.status]}</span>
+      <span class="ico chev" style="--icon: url(icons/chevron-down.svg)"></span>
+    </summary>
+    <div class="goal-body">
     <div class="row-between goal-top">
-      <div><h2 style="margin:0">${esc(g.name)}</h2>
-        <p class="muted small" style="margin:4px 0 0">${money(g.target)}${g.real ? " em valores de hoje" : ""} até ${monthLong(g.date)} · ${g.base === "tudo" ? "carteira + reserva" : "só a carteira"} · ${pct(g.annualReturn / 100, 1)} a.a. esperados</p>
+      <div>
+        <p class="muted small" style="margin:0">${money(g.target)}${g.real ? " em valores de hoje" : ""} até ${monthLong(g.date)} · ${g.base === "tudo" ? "carteira + reserva" : "só a carteira"} · ${pct(g.annualReturn / 100, 1)} a.a. esperados</p>
         ${g.extras?.length ? `<p class="goal-extras small"><span class="ico" style="--icon: url(icons/calendar-outline.svg)"></span>Extras: ${esc(extrasLabel(g, money, monthLong))}</p>` : ""}</div>
-      <div class="goal-actions"><span class="badge ${statusClass(p.status)}">${STATUS_LABEL[p.status]}</span>
+      <div class="goal-actions">
         ${count > 1 ? `<span class="goal-move"><button class="icon" data-move="-1" aria-label="Subir meta" title="Subir" ${index === 0 ? "disabled" : ""}>↑</button><button class="icon" data-move="1" aria-label="Descer meta" title="Descer" ${index === count - 1 ? "disabled" : ""}>↓</button></span>` : ""}
         <button class="ghost small-btn goal-edit">Editar</button><button class="icon goal-del" aria-label="Excluir meta" title="Excluir">✕</button></div>
     </div>
-    <div class="goal-progress"><div class="track"><div class="fill" style="width:${(p.progress * 100).toFixed(1)}%"></div></div>
-      <div class="row-between small"><span><b>${money(value)}</b> de ${money(g.target)}</span><span class="muted">${pct(p.progress, 1)}</span></div></div>
     <div class="stats goal-stats">
       <div class="stat"><div class="l">Falta</div><div class="v">${money(p.missing)}</div></div>
       <div class="stat"><div class="l">Prazo</div><div class="v">${duration(p.months)}</div></div>
@@ -123,7 +152,8 @@ function goalCard(r: Report, g: Goal, index: number, count: number) {
     <p class="note" style="margin-top:4px">${verdict(g, p)}</p>
     <div class="chart-box wipe goal-chart"><canvas></canvas></div>
     <p class="note">${historyMatches(r, g.base) ? "" : `O histórico aparece quando o seletor do topo está em <b>${g.base === "tudo" ? "Tudo" : "Carteira"}</b>. `}Projeção com juros compostos mensais${g.real ? `, em valores de hoje (descontando inflação de ${INFLATION.toLocaleString("pt-BR")}% a.a.)` : ""}. É uma estimativa: a rentabilidade real varia mês a mês.</p>
-  </section>`;
+    </div>
+  </details>`;
 }
 
 function goalChart(canvas: HTMLCanvasElement, r: Report, g: Goal) {
