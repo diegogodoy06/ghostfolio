@@ -3,14 +3,18 @@
  *
  * Roda dentro do container dos relatórios (que já tem o token do Ghostfolio e a simulação salva),
  * por stdio (mcp-stdio.ts, `docker exec -i ghostfolio-relatorios node mcp.js`) ou por HTTPS em
- * /mcp (main.ts). Só leitura: nada aqui altera o Ghostfolio nem a simulação salva.
+ * /mcp (main.ts). Não altera o Ghostfolio nem a simulação salva; só escreve nas metas do ano
+ * (plano.json), para o Claude poder criar metas e marcar progresso pela conversa.
  */
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Report } from "../shared";
-import { TASKS, buildContext, buildPrompt } from "../context";
+import { COACH_ROLE, TASKS, buildContext, buildPrompt } from "../context";
+import { AREAS, LIFE_KINDS, type MonthTotals, type PlanFile, type PlanItem, evaluate, isAchieved, isLife, planMarkdown } from "../plan";
+import { monthlyTotals, overview, readConfig, tokenOf } from "./financas";
 import { type Goal, goalsMarkdown } from "../goals";
 import { type PeriodId, gainBetween, indexSeries, periodStart, ret, stats } from "../web/calc";
 import { type Quote, type SimulationParams, defaultParams, simulate } from "../sim-engine";
@@ -49,6 +53,84 @@ async function savedGoals(): Promise<Goal[]> {
   } catch {
     return [];
   }
+}
+
+// ---------- metas do ano (plano.json do dono) ----------
+
+const spMonth = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
+const spDay = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+const shiftM = (ym: string, n: number) => {
+  const [y, m] = ym.split("-").map(Number) as [number, number];
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
+};
+const defaultPlanYear = () => Number(spMonth().slice(0, 4)) + (Number(spMonth().slice(5)) >= 10 ? 1 : 0);
+
+async function planFile(): Promise<{ file: string; plan: PlanFile }> {
+  const file = path.join(await ownerDir(), "plano.json");
+  try {
+    const plan = JSON.parse(fs.readFileSync(file, "utf8")) as PlanFile;
+    return { file, plan: { version: 1, years: plan.years ?? {}, notes: plan.notes } };
+  } catch {
+    return { file, plan: { version: 1, years: {} } };
+  }
+}
+function writePlan(file: string, plan: PlanFile) {
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ ...plan, updatedAt: new Date().toISOString() }, null, 2));
+  fs.renameSync(tmp, file);
+}
+async function financeToken() {
+  return tokenOf(readConfig(await ownerDir()));
+}
+
+async function evaluateYear(plan: PlanFile, year: number) {
+  const items = plan.years[String(year)] ?? [];
+  const today = spMonth();
+  const ty = Number(today.slice(0, 4));
+  let fin = items.some((it) => !isLife(it.kind)) ? await financeToken() : null;
+  let months: MonthTotals[] = [];
+  let trailing: MonthTotals[] = [];
+  if (fin) {
+    try {
+      [months, trailing] = await Promise.all([
+        year <= ty ? monthlyTotals(fin, `${year}-01`, year < ty ? `${year}-12` : today) : Promise.resolve([]),
+        monthlyTotals(fin, shiftM(today, -12), shiftM(today, -1)),
+      ]);
+    } catch {
+      fin = null; // Firefly fora do ar: as metas financeiras aparecem sem dados
+    }
+  }
+  const needReport = items.some((it) => it.kind === "aporte" || it.kind === "reserva");
+  const r = needReport ? await getReport() : null;
+  const ctx = {
+    year,
+    today,
+    months,
+    trailing,
+    financeConnected: !!fin,
+    invested: r?.daily.map((d) => ({ date: d.date, invested: d.invested })) ?? [],
+    reserve: r?.reserve ?? { value: 0, tagged: false },
+    fmt: brl,
+  };
+  return { items, evals: items.map((it) => evaluate(it, ctx)) };
+}
+
+async function planText(year: number, ids: boolean) {
+  const { plan } = await planFile();
+  const { items, evals } = await evaluateYear(plan, year);
+  const lines = planMarkdown(year, items, evals, { ids, note: plan.notes?.[String(year)] });
+  const others = Object.keys(plan.years)
+    .map(Number)
+    .filter((y) => y !== year && (plan.years[String(y)]?.length ?? 0) > 0)
+    .sort((a, b) => b - a);
+  if (others.length) {
+    lines.push("## Outros anos");
+    for (const y of others) {
+      const e = await evaluateYear(plan, y);
+      lines.push(`- ${y}: ${e.evals.filter(isAchieved).length} de ${e.items.length} cumpridas`);
+    }
+  }
+  return lines;
 }
 
 const positionsOf = (r: Report) =>
@@ -220,8 +302,141 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "metas_do_ano",
+  {
+    title: "Metas do ano",
+    description:
+      "Plano do ano do usuário: metas de vida de todas as áreas (saúde, carreira, estudos, viagens…; marcadas por ele) e metas financeiras avaliadas automaticamente (gastos, poupança, aportes, reserva), com status, progresso, id de cada meta e o placar dos outros anos. Use antes de atualizar ou criar metas.",
+    inputSchema: { ano: z.number().int().min(2000).max(2100).optional().describe("Padrão: o ano do plano atual (a partir de outubro, o ano seguinte).") },
+  },
+  async ({ ano }) => text((await planText(ano ?? defaultPlanYear(), true)).join("\n")),
+);
+
+server.registerTool(
+  "atualizar_meta_do_ano",
+  {
+    title: "Atualizar meta do ano",
+    description:
+      "Registra progresso numa meta de vida (pegue o id em metas_do_ano). Ações: concluir/reabrir (tipo 'fazer uma vez'), somar (contagem; quantidade padrão 1, negativa desfaz), marcar_mes/desmarcar_mes (tipo 'todo mês'; mes no formato AAAA-MM, padrão o mês atual), nota (troca a nota da meta). Confirme com o usuário antes de registrar algo que ele não pediu.",
+    inputSchema: {
+      id: z.string(),
+      acao: z.enum(["concluir", "reabrir", "somar", "marcar_mes", "desmarcar_mes", "nota"]),
+      quantidade: z.number().int().min(-100).max(1000).optional(),
+      mes: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+      data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Data do registro (padrão: hoje)."),
+      nota: z.string().max(300).optional(),
+    },
+  },
+  async ({ id, acao, quantidade, mes, data, nota }) => {
+    const { file, plan } = await planFile();
+    const year = Object.keys(plan.years).find((y) => plan.years[y]!.some((x) => x.id === id));
+    const it = year ? plan.years[year]!.find((x) => x.id === id)! : null;
+    if (!it || !year) return text(`Meta ${id} não encontrada. Use metas_do_ano para ver os ids.`);
+    const when = data ?? (Number(year) === Number(spDay().slice(0, 4)) ? spDay() : `${year}-12-31`);
+    if (acao === "concluir" || acao === "reabrir") {
+      if (it.kind !== "feito") return text("Concluir/reabrir só vale para metas do tipo 'fazer uma vez'.");
+      it.done = acao === "concluir" ? when : null;
+    } else if (acao === "somar") {
+      if (it.kind !== "contagem") return text("Somar só vale para metas de contagem.");
+      const n = quantidade ?? 1;
+      it.log ??= [];
+      if (n > 0) it.log.push({ date: when, n, ...(nota ? { note: nota } : {}) });
+      else {
+        let left = -n;
+        while (left > 0 && it.log.length) {
+          const last = it.log.at(-1)!;
+          const take = Math.min(left, last.n);
+          last.n -= take;
+          left -= take;
+          if (last.n <= 0) it.log.pop();
+        }
+      }
+    } else if (acao === "marcar_mes" || acao === "desmarcar_mes") {
+      if (it.kind !== "mensal") return text("Marcar mês só vale para metas do tipo 'todo mês'.");
+      const m = mes ?? spMonth();
+      if (!m.startsWith(`${year}-`)) return text(`O mês precisa ser de ${year}.`);
+      const set = new Set(it.months ?? []);
+      acao === "marcar_mes" ? set.add(m) : set.delete(m);
+      it.months = [...set].sort();
+    } else {
+      it.note = nota?.trim() || undefined;
+    }
+    writePlan(file, plan);
+    const e = await evaluateYear(plan, Number(year));
+    const i = e.items.findIndex((x) => x.id === id);
+    return text(`Atualizado. ${planMarkdown(Number(year), [e.items[i]!], [e.evals[i]!]).filter((l) => l.startsWith("- [")).join("")}`);
+  },
+);
+
+server.registerTool(
+  "criar_meta_do_ano",
+  {
+    title: "Criar meta do ano",
+    description:
+      "Cria uma meta de vida no plano de um ano. Tipos: feito (fazer uma vez), contagem (alvo = quantas vezes no ano), mensal (alvo = quantos meses, até 12). Metas financeiras automáticas são criadas pela tela (aba Metas). Confirme o texto com o usuário antes de criar.",
+    inputSchema: {
+      titulo: z.string().min(2).max(120),
+      tipo: z.enum(["feito", "contagem", "mensal"]),
+      area: z.enum(AREAS.map((a) => a.id) as [string, ...string[]]).describe(AREAS.map((a) => `${a.id} = ${a.label}`).join(", ")),
+      alvo: z.number().int().min(1).max(10000).optional(),
+      ano: z.number().int().min(2000).max(2100).optional(),
+      nota: z.string().max(300).optional(),
+    },
+  },
+  async ({ titulo, tipo, area, alvo, ano, nota }) => {
+    if (tipo !== "feito" && !alvo) return text("Informe o alvo (quantas vezes ou quantos meses).");
+    if (tipo === "mensal" && (alvo ?? 0) > 12) return text("Para 'todo mês', o alvo é no máximo 12.");
+    const { file, plan } = await planFile();
+    const year = ano ?? defaultPlanYear();
+    const item: PlanItem = { id: crypto.randomUUID(), kind: tipo, title: titulo.trim(), area, value: tipo === "feito" ? 1 : alvo!, note: nota?.trim() || undefined, createdAt: new Date().toISOString() };
+    plan.years[String(year)] = [...(plan.years[String(year)] ?? []), item];
+    writePlan(file, plan);
+    return text(`Meta criada em ${year}: ${titulo} (${LIFE_KINDS[tipo].label}, ${AREAS.find((a) => a.id === area)!.label}) · id: ${item.id}`);
+  },
+);
+
+server.registerTool(
+  "financas_do_mes",
+  {
+    title: "Finanças do mês",
+    description: "Contas, cartões (fatura aberta, última fechada, parcelas futuras), entradas, saídas e gastos por categoria de um mês, a partir do Firefly III.",
+    inputSchema: { mes: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional().describe("AAAA-MM; padrão: mês atual.") },
+  },
+  async ({ mes }) => {
+    const token = await financeToken();
+    if (!token) return text("O Firefly III ainda não está conectado. Conecte na aba Finanças dos relatórios.");
+    const dir = await ownerDir();
+    const o = await overview(token, readConfig(dir), mes ?? spMonth());
+    const lines = [`# Finanças de ${o.month}`, "", "## Contas"];
+    for (const a of o.accounts) lines.push(`- ${a.name}: ${brl(a.balance)}`);
+    lines.push("", "## Cartões");
+    for (const c of o.cards)
+      lines.push(
+        c.open && c.closed
+          ? `- ${c.name}: fatura aberta ${brl(c.open.total)} (fecha ${c.open.end}, vence ${c.open.due}); última fechada ${brl(c.closed.total)} (vence ${c.closed.due})${c.future.length ? `; parcelas futuras: ${c.future.map((f) => `${f.month} ${brl(f.value)}`).join(", ")}` : ""}`
+          : `- ${c.name}: saldo ${brl(c.balance)} (fechamento/vencimento não informados)`,
+      );
+    lines.push("", `## Mês`, `- Entradas: ${brl(o.income)} · Saídas: ${brl(o.expense)} · Sobra: ${brl(o.income - o.expense)}`, "- Gastos por categoria:");
+    for (const c of o.categories) lines.push(`  - ${c.name}: ${brl(c.value)}`);
+    lines.push("", "## Últimos 6 meses (entradas × saídas)");
+    for (const h of o.history) lines.push(`- ${h.month}: ${brl(h.income)} × ${brl(h.expense)}`);
+    return text(lines.join("\n"));
+  },
+);
+
+server.registerPrompt(
+  "analise_metas_do_ano",
+  { title: "Minhas metas do ano", description: "Como estou indo nas metas do ano (todas as áreas) e o que fazer no próximo mês" },
+  async () => {
+    const task = TASKS.find((t) => t.id === "ano")!;
+    const lines = await planText(defaultPlanYear(), false);
+    return { messages: [{ role: "user" as const, content: { type: "text" as const, text: buildPrompt(lines.join("\n"), task.prompt, COACH_ROLE) } }] };
+  },
+);
+
 // Prompts prontos (aparecem no menu de prompts do Claude Desktop).
-for (const t of TASKS.filter((x) => x.id !== "livre")) {
+for (const t of TASKS.filter((x) => x.id !== "livre" && !x.needsPlan)) {
   server.registerPrompt(
     `analise_${t.id}`,
     { title: t.label, description: `${t.label} da carteira com os dados atuais` },

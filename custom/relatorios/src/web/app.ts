@@ -10,6 +10,7 @@ import { openClaudeModal } from "./claude";
 import { mountGoalsSummary, renderMetas } from "./metas";
 import { openExtratosModal } from "./extratos";
 import { renderFinancas } from "./financas";
+import { mountPlanSummary } from "./plano";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
 Chart.defaults.color = "rgba(255,255,255,0.7)";
@@ -275,6 +276,7 @@ function renderResumo(r: Report) {
         </div>
       </div>
     </section>
+    <section id="plan-summary"></section>
     <section id="sim-summary"></section>
     <section id="goals-summary"></section>
     <section class="split">
@@ -292,6 +294,12 @@ function renderResumo(r: Report) {
   );
 
   mountSimSummary(document.getElementById("sim-summary")!, r, () => openCarteira("sim"));
+  void mountPlanSummary(document.getElementById("plan-summary")!, r, () => {
+    state.tab = "metas";
+    history.replaceState(null, "", "#metas");
+    render();
+    window.scrollTo({ top: 0 });
+  });
   void mountGoalsSummary(document.getElementById("goals-summary")!, r, () => {
     state.tab = "metas";
     history.replaceState(null, "", "#metas");

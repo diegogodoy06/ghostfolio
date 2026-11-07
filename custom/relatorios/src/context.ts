@@ -15,6 +15,8 @@ export interface ContextOptions {
   positions?: boolean;
   /** Metas de patrimônio (valor até uma data). */
   goals?: Goal[];
+  /** Metas do ano já em Markdown (plano do ano, de plan.ts). */
+  plan?: string[];
 }
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -114,6 +116,7 @@ export function buildContext(r: Report, opts: ContextOptions = {}): string {
   lines.push("");
 
   lines.push(...goalsMarkdown(r, opts.goals ?? [], hide));
+  if (opts.plan?.length) lines.push(...opts.plan);
 
   // Estratégia e simulação
   if (opts.simulation) {
@@ -141,7 +144,18 @@ export function buildContext(r: Report, opts: ContextOptions = {}): string {
 }
 
 /** Tarefas prontas para o botão "Analisar com Claude". */
-export const TASKS: { id: string; label: string; needsSim?: boolean; prompt: string }[] = [
+export const COACH_ROLE =
+  "Você é um coach de planejamento pessoal e financeiro: direto, prático e gentil, sem frases motivacionais vazias. Conhece finanças pessoais no Brasil.";
+
+export const TASKS: { id: string; label: string; needsSim?: boolean; needsPlan?: boolean; role?: string; prompt: string }[] = [
+  {
+    id: "ano",
+    label: "Minhas metas do ano",
+    needsPlan: true,
+    role: COACH_ROLE,
+    prompt:
+      "Analise minhas metas do ano (todas as áreas, não só as financeiras): como estou indo, o que está atrasado e o que é realista até dezembro. Compare com os anos anteriores, se houver. Sugira um foco para o próximo mês com 3 a 5 ações concretas e diga se alguma meta deveria ser ajustada (mais ambiciosa ou mais realista).",
+  },
   {
     id: "diagnostico",
     label: "Diagnóstico geral",
@@ -176,9 +190,9 @@ export const TASKS: { id: string; label: string; needsSim?: boolean; prompt: str
   { id: "livre", label: "Pergunta livre", prompt: "" },
 ];
 
-export function buildPrompt(context: string, task: string) {
+export function buildPrompt(context: string, task: string, role?: string) {
   return [
-    "Você é um analista de investimentos experiente no mercado brasileiro (B3, FIIs, Tesouro Direto, tributação de PF).",
+    role ?? "Você é um analista de investimentos experiente no mercado brasileiro (B3, FIIs, Tesouro Direto, tributação de PF).",
     "Responda em português, de forma direta e organizada. Seja honesto sobre incertezas e não invente dados que não estão abaixo; quando usar conhecimento geral sobre um ativo, diga que é geral e pode estar desatualizado. Isto não é recomendação formal de investimento.",
     "",
     `**Tarefa:** ${task || "(escreva sua pergunta aqui)"}`,

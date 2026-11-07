@@ -1,25 +1,69 @@
 /**
- * Plano do ano ("Metas 2027"): metas de gasto, poupança, aportes e reserva para um ano, avaliadas
- * mês a mês com os lançamentos do Firefly III (gastos e entradas) e o histórico do Ghostfolio
- * (aportes e reserva). Antes de o ano começar, compara a meta com os últimos 12 meses.
+ * Plano do ano ("Meu 2027"): metas de vida de todo tipo (feitas na mão: fazer uma vez, contagem,
+ * todo mês) e metas financeiras avaliadas sozinhas, mês a mês, com os lançamentos do Firefly III
+ * (gastos e entradas) e o histórico do Ghostfolio (aportes e reserva). Antes de o ano começar,
+ * as financeiras são comparadas com os últimos 12 meses; anos passados mostram o que foi cumprido.
  */
 
-export type PlanKind = "gasto" | "categoria" | "poupanca" | "guardar" | "aporte" | "reserva";
+export type FinanceKind = "gasto" | "categoria" | "poupanca" | "guardar" | "aporte" | "reserva";
+export type LifeKind = "feito" | "contagem" | "mensal";
+export type PlanKind = FinanceKind | LifeKind;
+
+export interface PlanLog {
+  date: string;
+  n: number;
+  note?: string;
+}
 
 export interface PlanItem {
   id: string;
   kind: PlanKind;
-  /** R$ por mês (gasto, categoria), % (poupança), R$ no ano (guardar, aporte) ou meses (reserva). */
+  /**
+   * R$ por mês (gasto, categoria), % (poupança), R$ no ano (guardar, aporte), meses de gastos
+   * (reserva), quantidade-alvo (contagem), meses-alvo (mensal) ou 1 (feito).
+   */
   value: number;
   /** Categoria do Firefly (kind "categoria"). */
   category?: string;
+  /** Nome da meta (metas de vida). */
+  title?: string;
+  /** Área da vida (ver AREAS). As financeiras ficam em "financas". */
+  area?: string;
+  note?: string;
+  /** Feito: data em que foi concluída. */
+  done?: string | null;
+  /** Contagem: registros (+1, +2…), com data. */
+  log?: PlanLog[];
+  /** Todo mês: meses cumpridos ("YYYY-MM"). */
+  months?: string[];
   createdAt: string;
 }
 
 export interface PlanFile {
   version: 1;
   years: Record<string, PlanItem[]>;
+  /** Retrospectiva livre de cada ano. */
+  notes?: Record<string, string>;
 }
+
+export const AREAS: { id: string; label: string; color: string }[] = [
+  { id: "financas", label: "Finanças", color: "#36cfcc" },
+  { id: "saude", label: "Saúde e treino", color: "#199e70" },
+  { id: "carreira", label: "Carreira e trabalho", color: "#3987e5" },
+  { id: "estudos", label: "Estudos", color: "#9085e9" },
+  { id: "pessoal", label: "Pessoal", color: "#d55181" },
+  { id: "relacoes", label: "Família e amigos", color: "#e66767" },
+  { id: "viagens", label: "Viagens e lazer", color: "#c98500" },
+  { id: "casa", label: "Casa", color: "#d95926" },
+  { id: "outros", label: "Outros", color: "#898781" },
+];
+export const areaOf = (it: PlanItem) => (it.kind in LIFE_KINDS ? (AREAS.find((a) => a.id === it.area) ?? AREAS.at(-1)!) : AREAS[0]!);
+export const LIFE_KINDS: Record<LifeKind, { label: string; hint: string }> = {
+  feito: { label: "Fazer uma vez", hint: "Ex.: tirar o passaporte, viajar para o Japão, terminar a pós." },
+  contagem: { label: "Contagem", hint: "Ex.: ler 12 livros, correr 500 km, 40 jantares em família." },
+  mensal: { label: "Todo mês", hint: "Marque os meses cumpridos. Ex.: treinar 12x no mês, revisar o orçamento." },
+};
+export const isLife = (k: PlanKind): k is LifeKind => k in LIFE_KINDS;
 
 /** Totais de um mês vindos do Firefly. */
 export interface MonthTotals {
@@ -29,7 +73,7 @@ export interface MonthTotals {
   categories: Record<string, number>;
 }
 
-export const KIND_INFO: Record<PlanKind, { label: string; hint: string; unit: "mes" | "pct" | "ano" | "meses"; finance: boolean }> = {
+export const KIND_INFO: Record<FinanceKind, { label: string; hint: string; unit: "mes" | "pct" | "ano" | "meses"; finance: boolean }> = {
   gasto: { label: "Limite de gastos por mês", hint: "Quanto pode sair por mês, somando tudo (cartões e contas).", unit: "mes", finance: true },
   categoria: { label: "Limite de uma categoria", hint: "Ex.: delivery até R$ 400 por mês.", unit: "mes", finance: true },
   poupanca: { label: "Taxa de poupança", hint: "Quanto da renda sobra no mês, em %.", unit: "pct", finance: true },
@@ -38,8 +82,17 @@ export const KIND_INFO: Record<PlanKind, { label: string; hint: string; unit: "m
   reserva: { label: "Reserva de emergência", hint: "Quantos meses de gastos guardados na reserva (marcador Fundo de Emergência).", unit: "meses", finance: false },
 };
 
-export type PlanStatus = "ok" | "atencao" | "fora" | "futuro" | "sem-dados";
-export const PLAN_STATUS_LABEL: Record<PlanStatus, string> = { ok: "No caminho", atencao: "Atenção", fora: "Fora da meta", futuro: "Ainda não começou", "sem-dados": "Sem dados" };
+export type PlanStatus = "ok" | "atencao" | "fora" | "futuro" | "sem-dados" | "cumprida" | "nao-cumprida" | "aberta";
+export const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
+  ok: "No caminho",
+  atencao: "Atenção",
+  fora: "Fora da meta",
+  futuro: "Ainda não começou",
+  "sem-dados": "Sem dados",
+  cumprida: "Cumprida",
+  "nao-cumprida": "Não cumprida",
+  aberta: "Em aberto",
+};
 
 export interface PlanBar {
   month: string;
@@ -88,6 +141,7 @@ const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.le
 const pctTxt = (n: number) => `${(n * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 
 export function itemTitle(it: PlanItem, fmt: (n: number) => string) {
+  if (isLife(it.kind)) return it.title || "Meta";
   switch (it.kind) {
     case "gasto":
       return `Gastar até ${fmt(it.value)} por mês`;
@@ -123,11 +177,70 @@ function investedAt(ctx: PlanContext, date: string) {
   return v;
 }
 
+/** Avaliação final: num ano encerrado, "no caminho" vira cumprida e o resto vira não cumprida. */
 export function evaluate(it: PlanItem, ctx: PlanContext): PlanEval {
+  const e = isLife(it.kind) ? evaluateLife(it, ctx) : evaluateFinance(it, ctx);
+  if (timing(ctx).phase === "passado" && e.status !== "sem-dados") {
+    if (e.status === "ok") return { ...e, status: "cumprida" };
+    if (e.status !== "cumprida") return { ...e, status: "nao-cumprida" };
+  }
+  return e;
+}
+
+/** Já conta como cumprida (para o placar do ano). */
+export const isAchieved = (e: PlanEval) => e.status === "cumprida";
+
+const dateBR = (iso: string) => iso.slice(0, 10).split("-").reverse().join("/");
+
+function evaluateLife(it: PlanItem, ctx: PlanContext): PlanEval {
+  const t = timing(ctx);
+  const base: PlanEval = { status: "aberta", progress: null, current: null, baseline: null, baselineMonths: 0, bars: [], barLimit: null, text: "" };
+  const months = yearMonths(ctx.year);
+  if (it.kind === "feito") {
+    if (it.done) return { ...base, status: "cumprida", progress: 1, current: 1, text: `Feita em ${dateBR(it.done)}.` };
+    return { ...base, status: t.phase === "futuro" ? "futuro" : "aberta", progress: 0, current: 0, text: t.phase === "passado" ? "Ficou para trás." : "Marque quando concluir." };
+  }
+  if (it.kind === "contagem") {
+    const log = it.log ?? [];
+    const count = log.reduce((s, l) => s + l.n, 0);
+    const target = Math.max(1, it.value);
+    const bars = months.map((ym, i) => ({ month: ym, value: log.filter((l) => l.date.startsWith(ym)).reduce((s, l) => s + l.n, 0) || (t.phase === "passado" || i < t.elapsed ? 0 : null), partial: t.phase === "atual" && i === t.elapsed - 1 }));
+    const last = [...log].sort((a, b) => b.date.localeCompare(a.date))[0];
+    const res = { ...base, current: count, progress: Math.min(1, count / target), bars, barLimit: target / 12 };
+    const lastTxt = last ? ` Último registro em ${dateBR(last.date)}${last.note ? ` (${last.note})` : ""}.` : "";
+    if (count >= target) return { ...res, status: "cumprida", text: `<b>${count} de ${target}</b>: meta cumprida.${lastTxt}` };
+    if (t.phase === "futuro") return { ...res, status: "futuro", text: `Meta de ${target}: cerca de ${(target / 12).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} por mês.` };
+    const expected = (target * t.elapsed) / 12;
+    const left = target - count;
+    const monthsLeft = 12 - t.complete;
+    return {
+      ...res,
+      status: t.phase === "passado" ? "nao-cumprida" : count >= expected * 0.9 ? "ok" : count >= expected * 0.6 ? "atencao" : "fora",
+      text: `<b>${count} de ${target}</b>${t.phase === "atual" ? `; o esperado até ${MONTHS_PT[t.elapsed - 1]} era ${Math.round(expected)}. Faltam ${left}: ${(left / Math.max(1, monthsLeft)).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} por mês.` : "."}${lastTxt}`,
+    };
+  }
+  // mensal
+  const checked = new Set((it.months ?? []).filter((m) => m.startsWith(`${ctx.year}-`)));
+  const target = Math.min(12, Math.max(1, it.value));
+  const count = checked.size;
+  const bars = months.map((ym, i) => ({ month: ym, value: checked.has(ym) ? 1 : t.phase === "passado" || i < t.complete ? 0 : null, partial: t.phase === "atual" && i === t.elapsed - 1 }));
+  const res = { ...base, current: count, progress: Math.min(1, count / target), bars, barLimit: null };
+  if (count >= target) return { ...res, status: "cumprida", text: `<b>${count} de ${target}</b> meses: meta cumprida.` };
+  if (t.phase === "futuro") return { ...res, status: "futuro", text: `Meta: ${target} de 12 meses.` };
+  const possible = count + (12 - t.complete);
+  const expected = (target * t.complete) / 12;
+  return {
+    ...res,
+    status: t.phase === "passado" || possible < target ? "fora" : count >= expected - 0.5 ? "ok" : "atencao",
+    text: `<b>${count} de ${target}</b> meses${t.phase === "atual" ? (possible < target ? ". Não dá mais para chegar na meta neste ano." : possible === target ? ". Não dá para falhar mais nenhum mês." : `. Dá para falhar mais ${possible - target} ${possible - target === 1 ? "mês" : "meses"}.`) : "."}`,
+  };
+}
+
+function evaluateFinance(it: PlanItem, ctx: PlanContext): PlanEval {
   const t = timing(ctx);
   const fmt = ctx.fmt;
   const base: PlanEval = { status: "sem-dados", progress: null, current: null, baseline: null, baselineMonths: 0, bars: [], barLimit: null, text: "" };
-  const info = KIND_INFO[it.kind];
+  const info = KIND_INFO[it.kind as FinanceKind];
   if (info.finance && !ctx.financeConnected) return { ...base, text: "Conecte o Firefly III na aba <b>Finanças</b> para acompanhar esta meta." };
 
   const byMonth = new Map(ctx.months.map((m) => [m.month, m]));
@@ -291,4 +404,30 @@ export function evaluate(it: PlanItem, ctx: PlanContext): PlanEval {
         ? `Reserva de <b>${fmt(ctx.reserve.value)}</b> cobre <b>${covered.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} meses</b> de gastos (média de ${fmt(expenseAvg)}/mês). Meta cumprida.`
         : `Reserva de <b>${fmt(ctx.reserve.value)}</b> cobre ${covered.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} meses. Para ${it.value} meses (média de ${fmt(expenseAvg)}/mês), faltam <b>${fmt(target - ctx.reserve.value)}</b>.`,
   };
+}
+
+// ---------- texto para o Claude (prompt e MCP) ----------
+
+const strip = (s: string) => s.replace(/<[^>]+>/g, "");
+
+/** Plano de um ano em Markdown, por área, com o id de cada meta (o MCP usa para atualizar). */
+export function planMarkdown(year: number, items: PlanItem[], evals: PlanEval[], opts: { ids?: boolean; hideValues?: boolean; note?: string } = {}) {
+  const lines = [`## Metas de ${year}`];
+  if (!items.length) return [...lines, "- Nenhuma meta cadastrada para este ano.", ""];
+  const done = evals.filter(isAchieved).length;
+  lines.push(`- Placar: ${done} de ${items.length} cumpridas`);
+  for (const area of AREAS) {
+    const idx = items.map((it, i) => [it, i] as const).filter(([it]) => areaOf(it).id === area.id);
+    if (!idx.length) continue;
+    lines.push(`### ${area.label}`);
+    for (const [it, i] of idx) {
+      const e = evals[i]!;
+      const title = itemTitle(it, (n) => (opts.hideValues ? "(oculto)" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })));
+      const detail = opts.hideValues && !isLife(it.kind) ? "" : ` — ${strip(e.text)}`;
+      lines.push(`- [${isAchieved(e) ? "x" : " "}] ${title} (${PLAN_STATUS_LABEL[e.status]})${detail}${it.note ? ` · nota: ${it.note}` : ""}${opts.ids ? ` · id: ${it.id}` : ""}`);
+    }
+  }
+  if (opts.note) lines.push("", `Retrospectiva: ${opts.note}`);
+  lines.push("");
+  return lines;
 }

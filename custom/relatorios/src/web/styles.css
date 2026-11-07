@@ -753,3 +753,59 @@ button, a, summary, .chip, .pos { touch-action: manipulation; }
   .plan-tools .icon { min-width: 30px; height: 30px; }
 }
 .pb-caption { font-size: 11px; color: var(--muted); }
+
+/* ---------- Meu ano: metas de vida, áreas e evolução ---------- */
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.plan-score { height: 8px; background: var(--card-2); border-radius: 4px; overflow: hidden; margin: 12px 0 4px; }
+.plan-score .fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.6s var(--ease); }
+.plan-area { margin-top: 18px; }
+.plan-area h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-2); }
+.plan-area h3 .small { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.plan-area .plan-list { margin-top: 0; }
+.plan-item.achieved { background: rgba(54, 207, 204, 0.06); }
+.plan-item.achieved .plan-item-head b { color: var(--ink-2); }
+.plan-check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); background: transparent; color: transparent; font-size: 13px; font-weight: 800; cursor: pointer; display: grid; place-items: center; padding: 0; transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s; }
+.plan-check:hover { border-color: var(--accent); }
+.plan-check:active { transform: scale(0.9); }
+.plan-check.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.plan-check:disabled { opacity: 0.4; cursor: default; }
+.plan-item-head:has(.plan-check) { grid-template-columns: 24px minmax(0, 1fr) auto auto; }
+.plan-counter { display: flex; align-items: center; gap: 12px; }
+.plan-counter b { font-size: 18px; font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+.plan-counter .icon { min-width: 36px; height: 36px; }
+.plan-counter .primary { height: 36px; padding: 0 16px; }
+.plan-months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; }
+.pm { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--card-3); color: var(--ink-2); font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; transition: background 0.15s, color 0.15s; }
+.pm.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.pm.now:not(.on) { border-color: var(--accent); }
+.pm:disabled { opacity: 0.3; cursor: default; }
+.plan-notes { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.plan-notes summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--ink-2); }
+.plan-notes textarea { width: 100%; box-sizing: border-box; margin-top: 10px; resize: vertical; min-height: 70px; background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: inherit; color: var(--ink); }
+.plan-evo h2 { margin-bottom: 10px; }
+.evo-list { display: grid; gap: 6px; }
+.evo-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 12px; border-radius: 10px; border: 1px solid transparent; background: var(--card-2); color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
+.evo-row:hover { background: var(--card-3); }
+.evo-row.current { border-color: var(--accent); }
+.evo-y { font-size: 16px; }
+.evo-bar { display: grid; gap: 6px; min-width: 0; }
+.evo-bar .track { height: 8px; background: var(--card-3); border-radius: 4px; overflow: hidden; }
+.evo-bar .fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.evo-areas { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-2); }
+.evo-area { display: inline-flex; align-items: center; gap: 4px; }
+.evo-area .dot { width: 7px; height: 7px; }
+.evo-num { display: grid; justify-items: end; font-variant-numeric: tabular-nums; }
+.plan-sum { display: grid; gap: 8px; }
+.plan-sum .plan-score { margin: 4px 0 0; }
+.plan-sum-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-sum-list .chip-static { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 4px 10px; }
+.plan-group { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 8px !important; }
+.plan-group + .plan-kinds + .plan-group { margin-top: 18px !important; }
+.plan-fields .pf-wide { grid-column: 1 / -1; }
+@media (max-width: 575.98px) {
+  .plan-months { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .pm { height: 36px; }
+  .plan-item-head:has(.plan-check) { grid-template-columns: 24px minmax(0, 1fr); }
+  .evo-row { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; }
+  .plan-kinds { grid-template-columns: 1fr; }
+}

@@ -3,6 +3,7 @@ import type { Report } from "../shared";
 import { TASKS, buildContext, buildPrompt } from "../context";
 import { ensureParams, simQuotes } from "./simulacao";
 import { loadGoals } from "./metas";
+import { planContext } from "./plano";
 import { esc, openModal, privacy, toast } from "./ui";
 
 /** Copia texto; usa o método antigo quando a página não é HTTPS/localhost (ex.: celular pela rede). */
@@ -23,16 +24,18 @@ async function copyText(text: string, fallbackEl: HTMLTextAreaElement) {
 export async function openClaudeModal(r: Report) {
   const params = await ensureParams(r).catch(() => null);
   const goalList = await loadGoals().catch(() => []);
+  const planLines = { show: await planContext(r, false).catch(() => [] as string[]), hidden: await planContext(r, true).catch(() => [] as string[]) };
+  const hasPlan = planLines.show.some((l) => l.startsWith("- ["));
   const hasSim = !!params && (params.contribution > 0 || params.sales.length > 0 || (params.buys?.length ?? 0) > 0 || params.allowSells);
-  let task = TASKS[0]!;
+  let task = TASKS.find((t) => !t.needsPlan || hasPlan)!;
   let hide = privacy.on;
   let withSim = !!params;
   let edited = false;
 
   const m = openModal(
     "Analisar com Claude",
-    `<p class="muted" style="margin-top:0">Monta um prompt com os dados atuais da carteira. Cole no Claude (claude.ai, app ou Desktop) para gerar a análise. No Claude Desktop/Code você também pode usar o conector MCP “carteira”, que consulta os dados direto.</p>
-     <div class="chips" id="c-tasks">${TASKS.filter((t) => !t.needsSim || hasSim)
+    `<p class="muted" style="margin-top:0">Monta um prompt com os dados atuais da carteira e das suas metas do ano. Cole no Claude (claude.ai, app ou Desktop) para gerar a análise. No Claude Desktop/Code você também pode usar o conector MCP “carteira”, que consulta os dados direto.</p>
+     <div class="chips" id="c-tasks">${TASKS.filter((t) => (!t.needsSim || hasSim) && (!t.needsPlan || hasPlan))
        .map((t) => `<button class="chip" data-task="${t.id}" aria-pressed="${t.id === task.id}">${esc(t.label)}</button>`)
        .join("")}</div>
      <div class="claude-opts">
@@ -54,8 +57,8 @@ export async function openClaudeModal(r: Report) {
   const text = $<HTMLTextAreaElement>("#c-text");
 
   const regen = () => {
-    const ctx = buildContext(r, { hideValues: hide, goals: goalList, simulation: withSim && params ? { params, quotes: simQuotes() } : null });
-    text.value = buildPrompt(ctx, task.prompt);
+    const ctx = buildContext(r, { hideValues: hide, goals: goalList, plan: hide ? planLines.hidden : planLines.show, simulation: withSim && params ? { params, quotes: simQuotes() } : null });
+    text.value = buildPrompt(ctx, task.prompt, task.role);
     edited = false;
     sizeLabel();
     if (task.id === "livre") {
