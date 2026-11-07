@@ -463,7 +463,7 @@ function parseCsv(text: string, filename: string): ParsedFile {
   const cDebit = col(isDebit);
   const cDesc = col((h) => /descri|historico|estabelecimento|lancamento|detalhe|titulo|transaction_type|memo|nome|loja/.test(h) && !isDate(h));
   const cParcel = col((h) => /parcela|installment/.test(h));
-  const cId = col((h) => /^(id|reference_id|identificador|documento|dcto)/.test(h));
+  const cId = col((h) => /^(id|reference_id|identificador|documento|dcto|docto)/.test(h));
   const rows: ParsedRow[] = [];
   const seen = new Map<string, number>();
   for (const line of lines.slice(hi + 1)) {
@@ -490,6 +490,19 @@ function parseCsv(text: string, filename: string): ParsedFile {
     rows.push({ date, amount, description, uid: cId >= 0 && c[cId] ? `id:${c[cId]}` : uidOf(base, n) });
   }
   const card = /fatura|cartao|cartão|card|credit/i.test(norm(filename)) || header.some((h) => /estabelecimento|portador|parcela/.test(h));
+  if (card) {
+    // Fatura (XP, Bradesco…) traz a parcela 2 em diante com a data da compra original (meses atrás).
+    // Para cair na fatura certa, a parcela vai para o primeiro dia de compras da própria fatura.
+    const firstOwn = rows
+      .filter((r) => (installmentOf(r.description)?.n ?? 1) === 1 && !PAYMENT.test(r.description))
+      .map((r) => r.date)
+      .sort()[0];
+    if (firstOwn)
+      for (const r of rows) {
+        const p = installmentOf(r.description);
+        if (p && p.n > 1 && r.date < firstOwn) r.date = firstOwn;
+      }
+  }
   const positives = rows.filter((r) => r.amount > 0).length;
   return {
     format: "csv",
