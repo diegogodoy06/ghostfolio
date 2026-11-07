@@ -1171,3 +1171,46 @@ details.cat > summary .chev { color: var(--muted); }
 .pb-fill { border-radius: 8px !important; }
 .plan-track .fill { border-radius: 4px; }
 @media (max-width: 760px) { .plan-tiles { grid-template-columns: 1fr 1fr; } .plan-tile.hero { grid-column: 1 / -1; } }
+#fin-body, #cat-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+#fin-body > *, #cat-body > * { min-width: 0; }
+details.fin-cardbook { padding: 0; display: block; }
+details.fin-cardbook > .book-body { padding: 0 20px 20px; display: grid; gap: 14px; animation: rise 0.25s var(--ease) both; }
+.book-sum { list-style: none; cursor: pointer; display: grid; grid-template-columns: 38px minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 18px; gap: 14px; align-items: center; padding: 16px 20px; border-radius: var(--radius); transition: background 0.2s; }
+.book-sum::-webkit-details-marker { display: none; }
+.book-sum:hover { background: rgba(255, 255, 255, 0.02); }
+.book-ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--cc) 18%, transparent); color: var(--cc); }
+.book-ico .ico { width: 18px; height: 18px; }
+.book-name, .book-inv, .book-limit { display: grid; gap: 3px; min-width: 0; }
+.book-name b { font-weight: 600; }
+.book-name small, .book-inv small, .book-limit small { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.book-inv b { font-size: 20px; font-weight: 400; letter-spacing: -0.02em; }
+.book-chev { width: 16px; height: 16px; color: var(--muted); transition: transform 0.25s var(--ease); }
+details[open] > .book-sum .book-chev { transform: rotate(180deg); }
+details[open] > .book-sum { border-bottom: 1px solid var(--line); border-radius: var(--radius) var(--radius) 0 0; margin-bottom: 14px; }
+@media (max-width: 760px) {
+  .book-sum { grid-template-columns: 34px minmax(0, 1fr) auto 16px; grid-template-areas: "i n v c" "l l l l"; gap: 8px 12px; padding: 14px; }
+  .book-ico { grid-area: i; width: 34px; height: 34px; }
+  .book-name { grid-area: n; }
+  .book-inv { grid-area: v; text-align: right; }
+  .book-inv b { font-size: 17px; }
+  .book-limit { grid-area: l; }
+  .book-limit:empty { display: none; }
+  .book-chev { grid-area: c; }
+  details.fin-cardbook > .book-body { padding: 0 14px 14px; }
+}
+@media (max-width: 760px) {
+  .toggle.seg { display: flex !important; width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .toggle.seg::-webkit-scrollbar { display: none; }
+  .toggle.seg button { flex: none; }
+}
+@media (max-width: 760px) {
+  .book-name small { display: none; }
+  .book-inv small { white-space: normal; }
+}
+@media (max-width: 760px) {
+  .plan-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .plan-tile { padding: 10px; min-height: 72px; }
+  .plan-tile b { font-size: 22px; }
+  .plan-tile .small { font-size: 11px; }
+}
+.runway-big .tag, .tag { letter-spacing: 0; white-space: nowrap; }

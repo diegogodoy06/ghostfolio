@@ -68,7 +68,13 @@ const store = (k: string, v: string) => {
 export async function renderFinancas(r: Report, main: HTMLElement, charts: Chart[]) {
   rerender = () => {
     clearFinCache();
-    charts.splice(0).forEach((c) => c.destroy());
+    charts.splice(0).forEach((c) => {
+      try {
+        c.destroy();
+      } catch {
+        /* já destruído */
+      }
+    });
     void renderFinancas(r, main, charts);
   };
   document.querySelectorAll<HTMLElement>("[data-finview]").forEach((x) => x.setAttribute("aria-current", String(x.dataset.finview === view)));
@@ -97,6 +103,9 @@ export async function renderFinancas(r: Report, main: HTMLElement, charts: Chart
     }
     <div id="fin-body"><section class="card"><div class="skeleton line short"></div><div class="skeleton chart"></div></section></div>`;
 
+  const seg = main.querySelector<HTMLElement>(".fin-views");
+  const segOn = seg?.querySelector<HTMLElement>("[aria-pressed=true]");
+  if (seg && segOn) seg.scrollLeft = segOn.offsetLeft - seg.clientWidth / 2 + segOn.clientWidth / 2;
   main.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((b) =>
     b.addEventListener("click", () => {
       view = b.dataset.view as View;
@@ -139,8 +148,15 @@ async function viewMes(r: Report, body: HTMLElement, ctx: ViewCtx, main: HTMLEle
   if (!body.isConnected) return;
   const cash = o.accounts.filter((a) => a.netWorth !== false).reduce((s, a) => s + a.balance, 0);
   const cardDebt = o.cards.reduce((s, c) => s + Math.min(0, c.balance), 0);
-  const invest = r.summary.value;
-  const net = invest + cash + cardDebt;
+  void r;
+  void cardDebt;
+  const prev = (hist ?? []).filter((m) => m.month < month && (m.income > 0 || m.expense > 0)).slice(-3);
+  const avgOut = prev.length ? prev.reduce((a, m) => a + m.expense, 0) / prev.length : 0;
+  // Mês em andamento: compara com o ritmo esperado até hoje, não com o mês inteiro.
+  const [yy, mm] = month.split("-").map(Number) as [number, number];
+  const daysIn = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  const frac = month === thisMonth() ? Number(todayIso().slice(8)) / daysIn : 1;
+  const vsAvg = avgOut ? o.expense / (avgOut * frac) - 1 : null;
   const result = o.income - o.expense;
   const bills = upcomingBills(o);
   const isCur = month === thisMonth();
@@ -151,7 +167,7 @@ async function viewMes(r: Report, body: HTMLElement, ctx: ViewCtx, main: HTMLEle
 
   body.innerHTML = `
     <section class="kpis">
-      <div class="card kpi"><div class="label">Patrimônio total</div><div class="value">${money(net)}</div><div class="sub">investimentos ${money(invest)} + contas − cartões</div></div>
+      <div class="card kpi"><div class="label">Gastos do mês</div><div class="value">${money(o.expense)}</div>${vsAvg == null ? `<div class="sub">${o.categories.length} categorias</div>` : `<span class="delta ${vsAvg <= 0 ? "up" : "down"}">${vsAvg > 0 ? "+" : ""}${Math.round(vsAvg * 100)}% vs ${frac < 1 ? "o ritmo de" : "a média de"} 3 meses</span>`}</div>
       <div class="card kpi"><div class="label">Em contas</div><div class="value">${money(cash)}</div><div class="sub">${o.accounts.filter((a) => a.netWorth !== false).length} contas</div></div>
       <div class="card kpi"><div class="label">Faturas a pagar</div><div class="value">${money(bills.reduce((s, b) => s + b.total, 0))}</div>${bills[0] ? `<span class="delta down">${esc(bills[0].name)} vence ${day(bills[0].due)}</span>` : `<div class="sub">nada em aberto</div>`}</div>
       <div class="card kpi"><div class="label">Sobra do mês</div><div class="value">${money(result)}</div><span class="delta ${result >= 0 ? "up" : "down"}">${o.income > 0 ? `${Math.round((result / o.income) * 100)}% das entradas` : `saiu ${money(o.expense)}`}</span><div class="sub">${isCur && (pendIn || pendOut) ? `prevista ${money(result + pendIn - pendOut)} no fim do mês` : `entrou ${money(o.income)} · saiu ${money(o.expense)}`}</div></div>

@@ -74,7 +74,13 @@ export async function renderMetas(r: Report, main: HTMLElement, charts: Chart[])
         const next = [...list];
         [next[from], next[to]] = [next[to]!, next[from]!];
         goals = next;
-        charts.splice(0).forEach((c) => c.destroy());
+        charts.splice(0).forEach((c) => {
+          try {
+            c.destroy();
+          } catch {
+            /* já destruído */
+          }
+        });
         await renderMetas(r, main, charts);
         // Mantém a meta movida à vista e com o foco no mesmo botão.
         const moved = main.querySelector<HTMLElement>(`[data-goal="${g.id}"]`);

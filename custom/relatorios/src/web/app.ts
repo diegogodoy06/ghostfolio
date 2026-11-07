@@ -177,8 +177,9 @@ function syncSidebar() {
 
 /** `animate: false` = troca de filtro na mesma tela: sem a animação de entrada das seções. */
 function render(animate = true) {
-  charts.forEach((c) => c.destroy());
+  charts.forEach((c) => safeDestroy(c));
   charts = [];
+  hubChart = null;
   syncSidebar();
   const r = state.report;
   pageMeta(r);
@@ -413,6 +414,14 @@ function renderResumo(r: Report) {
   );
 }
 
+/** Destrói um gráfico sem quebrar se ele já tiver sido destruído antes. */
+function safeDestroy(c: Chart) {
+  try {
+    c.destroy();
+  } catch {
+    /* já destruído */
+  }
+}
 let hubMode: MainMode = "invest";
 let hubChart: Chart | null = null;
 /** Preenche o painel do Resumo quando os dados das finanças chegam. */
@@ -429,7 +438,7 @@ function fillHub(r: Report, d: HubData) {
   const drawChart = () => {
     ch.innerHTML = `${mainChartHead(r, f, d, hubMode)}<div class="chart-box"><canvas></canvas></div>`;
     if (hubChart) {
-      hubChart.destroy();
+      safeDestroy(hubChart);
       charts = charts.filter((c) => c !== hubChart);
     }
     hubChart = mainChart(ch.querySelector("canvas")!, r, d, hubMode);

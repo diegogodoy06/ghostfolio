@@ -143,7 +143,7 @@ export async function viewCartoes(body: HTMLElement, ctx: ViewCtx) {
       <div class="chart-box tall"><canvas id="cc-ahead"></canvas></div>
       <p class="note">Inclui o que já foi lançado, as parcelas que ainda vão cair e as assinaturas previstas em cada cartão.</p>
     </section>
-    ${books.map((b, i) => `<section class="card fin-cardbook" data-book="${esc(b.id)}" style="--cc:${cardColor(i)}"></section>`).join("")}`;
+    ${books.map((b, i) => bookShell(b, i)).join("")}`;
   ctx.charts.push(
     new Chart(body.querySelector<HTMLCanvasElement>("#cc-ahead")!, {
       type: "bar",
@@ -155,7 +155,47 @@ export async function viewCartoes(body: HTMLElement, ctx: ViewCtx) {
       },
     }),
   );
-  books.forEach((b, i) => drawBook(body.querySelector<HTMLElement>(`[data-book="${b.id}"]`)!, b, i, ctx));
+  books.forEach((b, i) => {
+    const d = body.querySelector<HTMLDetailsElement>(`details[data-book="${b.id}"]`)!;
+    const inner = d.querySelector<HTMLElement>(".book-body")!;
+    const draw = () => {
+      if (d.open && !inner.childElementCount) drawBook(inner, b, i, ctx);
+      const set = openBooks();
+      d.open ? set.add(b.id) : set.delete(b.id);
+      try {
+        sessionStorage.setItem("rel.openCards", [...set].join(","));
+      } catch {
+        /* sem armazenamento */
+      }
+    };
+    d.addEventListener("toggle", draw);
+    if (d.open) drawBook(inner, b, i, ctx);
+  });
+}
+
+const openBooks = () => {
+  try {
+    return new Set((sessionStorage.getItem("rel.openCards") ?? "").split(",").filter(Boolean));
+  } catch {
+    return new Set<string>();
+  }
+};
+/** Cartão recolhível: fechado mostra só a fatura do momento e o uso do limite. */
+function bookShell(b: CardBook, i: number) {
+  const cur = b.config ? currentInvoice(b) : null;
+  const debt = Math.max(0, -b.balance);
+  const limit = b.config?.limit;
+  const label = cur ? (cur.status === "fechada" ? "fechada" : cur.status === "aberta" ? "aberta" : STATUS_LABEL[cur.status]) : "";
+  return `<details class="card fin-cardbook" data-book="${esc(b.id)}" style="--cc:${cardColor(i)}" ${openBooks().has(b.id) ? "open" : ""}>
+    <summary class="book-sum">
+      <span class="book-ico"><span class="ico" style="--icon: url(icons/card-outline.svg)"></span></span>
+      <span class="book-name"><b>${esc(b.name)}</b><small>${b.config ? `fecha dia ${b.config.closing} · vence dia ${b.config.due}` : "sem fechamento informado"}</small></span>
+      <span class="book-inv">${cur ? `<small>fatura ${label} · vence ${day(cur.due)}</small><b>${money(cur.total)}</b>` : `<small>devendo</small><b>${money(debt)}</b>`}</span>
+      <span class="book-limit">${limit ? `<small>limite ${Math.round((debt / limit) * 100)}% usado</small><span class="meter-wrap" style="--p:${Math.min(100, (debt / limit) * 100)}"><span class="meter rev"></span></span>` : ""}</span>
+      <span class="ico book-chev" style="--icon: url(icons/chevron-down.svg)"></span>
+    </summary>
+    <div class="book-body"></div>
+  </details>`;
 }
 
 function drawBook(el: HTMLElement, b: CardBook, idx: number, ctx: ViewCtx) {
@@ -169,7 +209,6 @@ function drawBook(el: HTMLElement, b: CardBook, idx: number, ctx: ViewCtx) {
     const visible = b.invoices.filter((i) => i.total !== 0 || i.status !== "futura" || i.month <= shift(thisMonth(), 2)).filter((i) => i.status !== "paga" || i.total !== 0);
     const pick = b.invoices.find((i) => i.month === pickedInvoice[b.id]) ?? currentInvoice(b)!;
     el.innerHTML = `
-      <div class="fin-card-head"><span class="ico" style="--icon: url(icons/card-outline.svg)"></span><b>${esc(b.name)}</b><span class="badge">fecha dia ${b.config.closing} · vence dia ${b.config.due}</span></div>
       ${
         limit
           ? `<div class="fin-limit"><div class="row-between small"><span>Usado <b>${money(debt)}</b> de ${money(limit)}</span><span class="muted">disponível ${money(Math.max(0, limit - debt))}</span></div>
@@ -307,7 +346,7 @@ export async function viewCategorias(body: HTMLElement, ctx: ViewCtx) {
             const over = meta != null && v > meta;
             return `<button class="fin-meta-row" data-cat="${esc(c)}" data-avg="${avg}">
               <div class="row-between"><span>${esc(c)}</span><span class="num"><b class="${over ? "down" : ""}">${money(v)}</b>${meta ? ` <span class="muted">/ ${money(meta)}</span>` : ` <span class="muted small">sem meta</span>`}</span></div>
-              <div class="track"><div class="fill ${over ? "over" : ""}" style="width:${(v / ref) * 100}%"></div>${meta ? `<i class="goal" style="left:${(meta / ref) * 100}%"></i>` : ""}<i class="avg" style="left:${(avg / ref) * 100}%"></i></div></button>`;
+              <div class="track"><div class="fill ${over ? "over" : ""}" style="width:${(v / ref) * 100}%"></div>${meta ? `<i class="goal" style="left:${(meta / ref) * 100}%"></i>` : ""}${avg > 0 ? `<i class="avg" style="left:${Math.min(100, (avg / ref) * 100)}%"></i>` : ""}</div></button>`;
           })
           .join("")}</div>
       </section>
