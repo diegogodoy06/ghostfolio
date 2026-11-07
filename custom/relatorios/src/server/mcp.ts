@@ -3,8 +3,9 @@
  *
  * Roda dentro do container dos relatórios (que já tem o token do Ghostfolio e a simulação salva),
  * por stdio (mcp-stdio.ts, `docker exec -i ghostfolio-relatorios node mcp.js`) ou por HTTPS em
- * /mcp (main.ts). Não altera o Ghostfolio nem a simulação salva; só escreve nas metas do ano
- * (plano.json), para o Claude poder criar metas e marcar progresso pela conversa.
+ * /mcp (main.ts). Não altera o Ghostfolio nem a simulação salva. Escreve nas metas do ano
+ * (plano.json) e, pelas ferramentas fin_* (mcp-fin.ts), opera as finanças pessoais no Firefly III:
+ * lançamentos, importação de extratos, regras de categoria, previstos e metas por categoria.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -22,6 +23,7 @@ import { buildReport, login } from "./report";
 import { loadOverrides } from "./categories";
 import { quote } from "./quote";
 import { ownerDir } from "./users";
+import { registerFinanceTools } from "./mcp-fin";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
@@ -449,6 +451,8 @@ for (const t of TASKS.filter((x) => x.id !== "livre" && !x.needsPlan)) {
     },
   );
 }
+
+registerFinanceTools(server);
 
 return server;
 }

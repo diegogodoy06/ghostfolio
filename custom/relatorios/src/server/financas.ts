@@ -619,18 +619,21 @@ export async function importRows(token: string, accountId: string, accountKey: s
 export async function existing(token: string, accountId: string, rows: ParsedRow[]) {
   if (!rows.length) return [];
   const dates = rows.map((r) => r.date).sort();
-  const txs = await accountTransactions(token, accountId, dates[0]!, dates.at(-1)!);
-  const pool = new Map<string, number>();
-  for (const t of txs) {
-    const signed = t.sourceId === accountId ? -t.amount : t.amount;
-    const k = `${t.date}|${signed.toFixed(2)}`;
-    pool.set(k, (pool.get(k) ?? 0) + 1);
-  }
+  const day = (d: string) => new Date(`${d}T00:00:00Z`);
+  // Parcelas podem estar em outro dia do ciclo: busca um mês a mais para trás e para frente.
+  const start = iso(addDays(day(dates[0]!), -35));
+  const end = iso(addDays(day(dates.at(-1)!), 35));
+  const txs = await accountTransactions(token, accountId, start, end);
+  const pool = txs.map((t) => ({ date: t.date, amount: t.sourceId === accountId ? -t.amount : t.amount, inst: installmentOf(t.description), used: false }));
+  const near = (a: string, b: string, days: number) => Math.abs(day(a).getTime() - day(b).getTime()) <= days * 86_400_000;
   return rows.map((r) => {
-    const k = `${r.date}|${r.amount.toFixed(2)}`;
-    const n = pool.get(k) ?? 0;
-    if (n > 0) pool.set(k, n - 1);
-    return n > 0;
+    const inst = installmentOf(r.description);
+    // Mesma parcela (n/total e valor) no mesmo mês ± alguns dias; senão, mesmo dia e valor.
+    const hit = inst
+      ? pool.find((p) => !p.used && p.inst && p.inst.n === inst.n && p.inst.total === inst.total && Math.abs(p.amount - r.amount) < 0.01 && near(p.date, r.date, 35))
+      : pool.find((p) => !p.used && p.date === r.date && Math.abs(p.amount - r.amount) < 0.01);
+    if (hit) hit.used = true;
+    return !!hit;
   });
 }
 
