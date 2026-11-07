@@ -698,3 +698,58 @@ button, a, summary, .chip, .pos { touch-action: manipulation; }
   .side-tabs button > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 .dropzone[hidden] { display: none; }
+
+/* ---------- Plano do ano (Metas 2027) ---------- */
+.section-title { font-size: 17px; margin: 0 0 4px; }
+.plan-head { align-items: flex-start; margin-bottom: 6px; }
+.plan-title { display: grid; gap: 4px; }
+.plan-title .month-nav h2 { margin: 0; min-width: 150px; text-align: center; }
+.plan-title p { margin: 0; }
+.plan-empty { padding: 8px 0 2px; }
+.plan-empty p { margin: 0 0 14px; }
+.plan-list { display: grid; gap: 12px; margin-top: 12px; }
+.plan-item { background: var(--card-2); border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
+.plan-item-head { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; }
+.plan-item-head > .ico { width: 18px; height: 18px; color: var(--accent); }
+.plan-item-head b { font-size: 15px; }
+.plan-tools { display: flex; gap: 4px; }
+.plan-tools .icon { min-width: 32px; height: 32px; font-size: 13px; color: var(--muted); background: transparent; }
+.plan-tools .icon:disabled { opacity: 0.3; }
+.plan-text { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.55; }
+.plan-track { height: 8px; background: var(--card-3); border-radius: 4px; overflow: hidden; }
+.plan-track .fill { height: 100%; border-radius: 4px; background: var(--muted); transition: width 0.5s var(--ease); }
+.plan-track .fill.buy { background: var(--accent); }
+.plan-track .fill.over { background: var(--warn); }
+.plan-track .fill.sell { background: var(--down); }
+.plan-bars { display: grid; gap: 4px; }
+.pb-area { position: relative; height: 46px; display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; align-items: end; }
+.pb { height: 100%; display: flex; align-items: flex-end; background: rgba(255, 255, 255, 0.03); border-radius: 3px; }
+.pb-fill { width: 100%; border-radius: 3px; background: var(--muted); min-height: 2px; }
+.pb.empty .pb-fill { min-height: 0; }
+.pb-fill.good { background: var(--accent); }
+.pb-fill.bad { background: var(--down); }
+.pb.partial .pb-fill { opacity: 0.55; }
+.pb-limit { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(255, 255, 255, 0.45); pointer-events: none; }
+.pb-labels { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; font-size: 10.5px; color: var(--muted); text-align: center; }
+.plan-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.plan-kind { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: start; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card-2); cursor: pointer; }
+.plan-kind:has(input:checked) { border-color: var(--accent); background: var(--accent-wash); }
+.plan-kind:has(input:disabled:not(:checked)) { opacity: 0.4; cursor: default; }
+.plan-kind input { accent-color: var(--accent); margin: 2px 0 0; }
+.plan-kind > span { display: grid; gap: 3px; }
+.plan-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+.plan-fields input, .plan-fields select { height: 44px; box-sizing: border-box; }
+.plan-fields [hidden] { display: none; }
+@media (max-width: 575.98px) {
+  .plan-head { flex-direction: column; align-items: stretch; }
+  .plan-head .primary { width: 100%; }
+  .plan-title .month-nav { justify-content: space-between; }
+  .plan .plan-list { margin-left: -6px; margin-right: -6px; }
+  .plan-item { padding: 12px; }
+  .plan-item-head { grid-template-columns: 18px minmax(0, 1fr); row-gap: 6px; }
+  .plan-item-head b { font-size: 14.5px; }
+  .plan-tools { grid-column: 1 / -1; grid-row: 2; justify-self: end; }
+  .plan-item-head .badge { grid-column: 2; grid-row: 2; justify-self: start; }
+  .plan-tools .icon { min-width: 30px; height: 30px; }
+}
+.pb-caption { font-size: 11px; color: var(--muted); }

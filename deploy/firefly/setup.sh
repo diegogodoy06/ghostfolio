@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Primeira instalação do Firefly III: gera o .env com segredos aleatórios e sobe os containers.
-# Uso: deploy/firefly/setup.sh [dominio-firefly] [dominio-importador]
+# Uso: deploy/firefly/setup.sh [dominio-firefly]
 set -euo pipefail
 cd "$(dirname "$0")"
 if [ ! -f .env ]; then
@@ -8,7 +8,6 @@ if [ ! -f .env ]; then
   umask 077
   cat > .env <<ENV
 FF_DOMAIN=${1:-financas.fourwebs.com.br}
-IMPORTER_DOMAIN=${2:-importar.fourwebs.com.br}
 FF_APP_KEY=$(rnd 32)
 FF_DB_PASSWORD=$(rnd 32)
 FF_CRON_TOKEN=$(rnd 32)
@@ -17,4 +16,4 @@ ENV
 fi
 docker compose pull --quiet
 docker compose up -d
-echo "Firefly III: http://$(hostname -I | awk '{print $1}'):3335  ·  importador: :3336"
+echo "Firefly III: http://$(hostname -I | awk '{print $1}'):3335"

@@ -3,6 +3,7 @@ import { Chart } from "chart.js";
 import type { Report } from "../shared";
 import { type Goal, type GoalExtra, type GoalPlan, INFLATION, STATUS_LABEL, addMonths, extraIn, extrasLabel, goalBaseValue as baseValue, monthKey, monthsBetween, planGoal, projectPath } from "../goals";
 import { indexSeries, periodStart, ret } from "./calc";
+import { mountPlan } from "./plano";
 import { ACCENT, MONTHS, axisMoney, esc, fadeFill, money, openModal, parseNum, pct, toast, xTicks } from "./ui";
 
 let goals: Goal[] | null = null;
@@ -47,8 +48,8 @@ function verdict(g: Goal, p: GoalPlan) {
 export async function renderMetas(r: Report, main: HTMLElement, charts: Chart[]) {
   const list = await loadGoals();
   if (!main.isConnected) return;
-  const head = `<section class="mode-bar"><p class="muted small" style="margin:0">Quanto você quer ter e até quando. Não depende da simulação: usa o patrimônio de hoje, uma rentabilidade esperada e o seu aporte mensal.</p>
-    <button class="primary" id="goal-new">+ Nova meta</button></section>`;
+  const head = `<section class="mode-bar"><div><h2 class="section-title">Patrimônio</h2><p class="muted small" style="margin:0">Quanto você quer ter e até quando, com juros compostos e o seu aporte mensal.</p></div>
+    <button class="ghost" id="goal-new">+ Meta de patrimônio</button></section>`;
   if (r.scope === "reserva") {
     main.innerHTML = head + `<div class="card"><p class="muted" style="margin:0">As metas usam a carteira ou o patrimônio todo. Escolha <b>Carteira</b> ou <b>Tudo</b> no seletor do topo.</p></div>`;
   } else if (!list.length) {
@@ -58,6 +59,8 @@ export async function renderMetas(r: Report, main: HTMLElement, charts: Chart[])
   } else {
     main.innerHTML = head + list.map((g, i) => goalCard(r, g, i, list.length)).join("");
   }
+  main.querySelector(".mode-bar")!.insertAdjacentHTML("beforebegin", `<div id="year-plan"></div>`);
+  void mountPlan(main.querySelector<HTMLElement>("#year-plan")!, r);
   main.querySelectorAll("#goal-new, #goal-new-2").forEach((b) => b.addEventListener("click", () => goalModal(r, null, () => renderMetas(r, main, charts))));
   for (const g of list) {
     const card = main.querySelector<HTMLElement>(`[data-goal="${g.id}"]`);

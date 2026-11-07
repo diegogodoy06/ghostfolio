@@ -590,3 +590,39 @@ export async function existing(token: string, accountId: string, rows: ParsedRow
     return n > 0;
   });
 }
+
+// ---------- totais mês a mês (plano do ano) ----------
+
+/** Entradas, saídas e gastos por categoria de cada mês entre `from` e `to` ("YYYY-MM"). */
+export async function monthlyTotals(token: string, from: string, to: string) {
+  const accs = await accounts(token);
+  const cardIds = new Set(accs.filter((a) => a.card).map((a) => a.id));
+  const txs = await transactions(token, monthRange(from).start, monthRange(to).end);
+  const out = new Map<string, { month: string; income: number; expense: number; categories: Record<string, number> }>();
+  for (let m = from; m <= to; ) {
+    out.set(m, { month: m, income: 0, expense: 0, categories: {} });
+    const [y, mo] = m.split("-").map(Number) as [number, number];
+    m = new Date(Date.UTC(y, mo, 1)).toISOString().slice(0, 7);
+  }
+  for (const t of txs) {
+    const row = out.get(t.date.slice(0, 7));
+    if (!row) continue;
+    const cat = t.category ?? "Sem categoria";
+    if (t.type === "withdrawal") {
+      row.expense += t.amount;
+      row.categories[cat] = (row.categories[cat] ?? 0) + t.amount;
+    } else if (t.type === "deposit") {
+      if (cardIds.has(t.destinationId) && !PAYMENT.test(t.description)) {
+        row.expense -= t.amount;
+        row.categories[cat] = (row.categories[cat] ?? 0) - t.amount;
+      } else row.income += t.amount;
+    }
+  }
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return [...out.values()].map((m) => ({ ...m, income: r2(m.income), expense: r2(m.expense), categories: Object.fromEntries(Object.entries(m.categories).map(([k, v]) => [k, r2(v)])) }));
+}
+
+export async function categoryNames(token: string) {
+  const data = await ffAll(token, "/categories");
+  return data.map((c) => String(c.attributes.name)).sort((a, b) => a.localeCompare(b, "pt-BR"));
+}

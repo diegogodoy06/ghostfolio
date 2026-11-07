@@ -14,7 +14,7 @@ import { quote } from "./quote";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./mcp";
 import { sameToken, seal, sealForSync, unseal, userDir, userIdOf } from "./users";
-import { FIREFLY_PUBLIC_URL, FireflyError, type ImportRow, accounts as finAccounts, existing, ff, importRows, overview, parseStatement, readConfig, sealToken, tokenOf, writeConfig } from "./financas";
+import { FIREFLY_PUBLIC_URL, FireflyError, type ImportRow, accounts as finAccounts, categoryNames, existing, monthlyTotals, ff, importRows, overview, parseStatement, readConfig, sealToken, tokenOf, writeConfig } from "./financas";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
@@ -187,6 +187,17 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true });
       }
     }
+    // Plano do ano (Metas 2027): metas de gasto, poupança, aportes e reserva por ano.
+    if (url.pathname === "/api/plan" && s) {
+      const file = path.join(s.dir, "plano.json");
+      if (req.method === "GET") return send(res, 200, readJson(file) ?? { version: 1, years: {} });
+      if (req.method === "PUT") {
+        const body = await readBody(req, 100_000);
+        if (!body || typeof body.years !== "object" || Array.isArray(body.years)) return send(res, 400, { error: "plano inválido" });
+        writeJson(file, { version: 1, years: body.years, updatedAt: new Date().toISOString() });
+        return send(res, 200, { ok: true });
+      }
+    }
     // Extratos da B3: listar, enviar e remover arquivos da pasta do usuário, lida pela sincronização.
     if (url.pathname.startsWith("/api/extratos") && s) {
       const dir = extratosDir(s);
@@ -279,6 +290,15 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, await overview(fin, cfg, month));
       }
       if (url.pathname === "/api/fin/accounts") return send(res, 200, await finAccounts(fin));
+      if (url.pathname === "/api/fin/categories") return send(res, 200, await categoryNames(fin));
+      if (url.pathname === "/api/fin/months") {
+        const from = url.searchParams.get("from") ?? "";
+        const to = url.searchParams.get("to") ?? "";
+        const ym = /^\d{4}-(0[1-9]|1[0-2])$/;
+        const span = (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + Number(to.slice(5)) - Number(from.slice(5));
+        if (!ym.test(from) || !ym.test(to) || span < 0 || span > 35) return send(res, 400, { error: "período inválido" });
+        return send(res, 200, await monthlyTotals(fin, from, to));
+      }
       if (url.pathname === "/api/fin/cards" && req.method === "PUT") {
         const { id, closing, due } = (await readBody(req)) as { id?: string; closing?: number; due?: number };
         const day = (n: unknown) => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 31;
