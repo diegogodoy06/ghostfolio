@@ -9,7 +9,7 @@ import { mountSimSummary, renderCarteiraSim, simOutlook } from "./simulacao";
 import { openClaudeModal } from "./claude";
 import { mountGoalsSummary, renderMetas } from "./metas";
 import { openExtratosModal } from "./extratos";
-import { renderFinancas } from "./financas";
+import { cachedOverview, clearFinCache, getOverview, hubNumbers, mountFinSummary, renderFinancas } from "./financas";
 import { mountPlanSummary } from "./plano";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
@@ -78,6 +78,7 @@ const GHOSTFOLIO = `${(document.querySelector<HTMLMetaElement>('meta[name="ghost
 
 async function load(refresh = false) {
   const btn = document.getElementById("refresh")!;
+  if (refresh) clearFinCache();
   btn.classList.add("spin");
   main.classList.remove("enter");
   main.innerHTML = skeleton(state.tab);
@@ -253,13 +254,26 @@ function renderResumo(r: Report) {
   const maxAbs = Math.max(...items.map((i) => Math.abs(i.value ?? 0)), 0.0001);
   const s = r.summary;
 
-  main.innerHTML = `
-    <section class="kpis">
+  // KPIs do hub: com o Firefly conectado, patrimônio total e o mês; sem ele, só os investimentos.
+  const investKpis = `
       <div class="card kpi"><div class="label">Patrimônio</div><div class="value">${money(s.value)}</div><div class="sub">Investido ${money(s.cost)}</div></div>
       <div class="card kpi"><div class="label">Valorização</div><div class="value ${tone(s.gain)}">${money(s.gain)}</div><div class="sub ${tone(s.gainPct)}">${spct(s.gainPct)} sobre o custo</div></div>
       <div class="card kpi"><div class="label">Proventos 12 meses</div><div class="value">${money(s.income12m)}</div><div class="sub">yield ${pct(s.yield12m)}</div></div>
-      <div class="card kpi"><div class="label">Rendimento no período</div><div class="value ${tone(gain)}">${money(gain)}</div><div class="sub">sendo ${money(incomesPeriod)} em proventos</div></div>
-    </section>
+      <div class="card kpi"><div class="label">Rendimento no período</div><div class="value ${tone(gain)}">${money(gain)}</div><div class="sub">sendo ${money(incomesPeriod)} em proventos</div></div>`;
+  const hubKpis = (o: NonNullable<ReturnType<typeof cachedOverview>>) => {
+    const h = hubNumbers(o, s.value);
+    const next = h.bills[0];
+    return `
+      <div class="card kpi"><div class="label">Patrimônio total</div><div class="value">${money(h.net)}</div><div class="sub">contas ${money(h.cash)} + investimentos</div></div>
+      <div class="card kpi"><div class="label">Investimentos</div><div class="value">${money(s.value)}</div><div class="sub ${tone(s.gainPct)}">${spct(s.gainPct)} · ${money(s.gain)}</div></div>
+      <div class="card kpi"><div class="label">Sobra do mês</div><div class="value ${h.result >= 0 ? "up" : "down"}">${money(h.result)}</div><div class="sub">entrou ${money(o.income)} · saiu ${money(o.expense)}</div></div>
+      <div class="card kpi"><div class="label">Faturas a pagar</div><div class="value">${money(h.billsTotal)}</div><div class="sub">${next ? `próxima ${esc(next.name)}, ${dateBR(next.due).slice(0, 5)}` : "nenhuma em aberto"}</div></div>`;
+  };
+  const known = cachedOverview();
+
+  main.innerHTML = `
+    <section class="kpis" id="hub-kpis">${known ? hubKpis(known) : investKpis}</section>
+    <section class="split hub-row"><div id="plan-summary"></div><div id="fin-summary"></div></section>
     <section class="card">
       <div class="row-between"><h2>Meu desempenho</h2>${realToggle()}</div>
       ${periodChips()}
@@ -276,7 +290,6 @@ function renderResumo(r: Report) {
         </div>
       </div>
     </section>
-    <section id="plan-summary"></section>
     <section id="sim-summary"></section>
     <section id="goals-summary"></section>
     <section class="split">
@@ -294,6 +307,20 @@ function renderResumo(r: Report) {
   );
 
   mountSimSummary(document.getElementById("sim-summary")!, r, () => openCarteira("sim"));
+  if (known === undefined)
+    void getOverview().then((o) => {
+      const el = document.getElementById("hub-kpis");
+      if (o && el) {
+        el.innerHTML = hubKpis(o);
+        countUp(el);
+      }
+    });
+  void mountFinSummary(document.getElementById("fin-summary")!, () => {
+    state.tab = "financas";
+    history.replaceState(null, "", "#financas");
+    render();
+    window.scrollTo({ top: 0 });
+  });
   void mountPlanSummary(document.getElementById("plan-summary")!, r, () => {
     state.tab = "metas";
     history.replaceState(null, "", "#metas");

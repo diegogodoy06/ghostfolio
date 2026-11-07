@@ -809,3 +809,31 @@ button, a, summary, .chip, .pos { touch-action: manipulation; }
   .evo-row { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; }
   .plan-kinds { grid-template-columns: 1fr; }
 }
+
+/* ---------- Resumo como hub ---------- */
+.hub-row { align-items: stretch; }
+.hub-row > div { display: grid; }
+.hub-card { display: grid; gap: 12px; align-content: start; }
+.hub-card h2 { margin: 0; }
+.hub-empty p { margin: 0; }
+.hub-empty .ghost { justify-self: start; }
+.hub-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.hub-flow > div { display: grid; gap: 2px; background: var(--card-2); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.hub-flow b { font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hub-cats { gap: 10px; }
+.hub-bills { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 14px; }
+.hub-bills .ico { width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; color: var(--muted); }
+.hub-bills b { font-variant-numeric: tabular-nums; }
+.hub-goals { display: grid; gap: 2px; }
+.hub-goal { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.hub-goal:last-child { border-bottom: 0; }
+.hub-goal .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-goal > :last-child { grid-column: -2; }
+.hub-goal .plan-check { grid-column: 4; }
+.hub-count { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hub-plus { height: 30px; padding: 0 12px; border-radius: 8px; display: inline-grid; place-items: center; line-height: 1; }
+.hub-month { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; }
+@media (max-width: 575.98px) {
+  .hub-flow b { font-size: 14px; }
+  .hub-flow > div { padding: 8px 10px; }
+}

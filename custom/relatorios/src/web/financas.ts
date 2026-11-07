@@ -64,7 +64,10 @@ const CARD_PAYMENT = /fatura|cart[aã]o|cartao/i;
 let rerender: () => void = () => {};
 
 export async function renderFinancas(r: Report, main: HTMLElement, charts: Chart[]) {
-  rerender = () => void renderFinancas(r, main, charts);
+  rerender = () => {
+    clearFinCache();
+    void renderFinancas(r, main, charts);
+  };
   const st = await fetch("/api/fin").then((x) => (x.ok ? x.json() : null)) as { connected: boolean; publicUrl: string } | null;
   if (!main.isConnected) return;
   if (!st?.connected) return renderConnect(main, st?.publicUrl ?? "");
@@ -469,4 +472,70 @@ try {
   if (m && /^\d{4}-\d{2}$/.test(m)) month = m;
 } catch {
   /* sem armazenamento */
+}
+
+// ---------- Resumo (hub): visão do mês, com cache para as trocas de filtro não piscarem ----------
+
+let ovCache: { month: string; at: number; data: Overview | null; pending?: Promise<Overview | null> } | null = null;
+/** Último resultado conhecido (síncrono): `undefined` = ainda não buscou; `null` = Firefly não conectado. */
+export const cachedOverview = (): Overview | null | undefined => (ovCache && ovCache.month === thisMonth() && !ovCache.pending ? ovCache.data : undefined);
+export function clearFinCache() {
+  ovCache = null;
+}
+export function getOverview(): Promise<Overview | null> {
+  const m = thisMonth();
+  if (ovCache && ovCache.month === m && Date.now() - ovCache.at < 5 * 60_000) return ovCache.pending ?? Promise.resolve(ovCache.data);
+  const pending = fetch(`/api/fin/overview?month=${m}`)
+    .then((r) => (r.ok ? (r.json() as Promise<Overview>) : null))
+    .catch(() => null)
+    .then((data) => {
+      ovCache = { month: m, at: Date.now(), data };
+      return data;
+    });
+  ovCache = { month: m, at: Date.now(), data: null, pending };
+  return pending;
+}
+
+/** Faturas a pagar: a fechada ainda não vencida, ou a aberta. */
+export function upcomingBills(o: Overview) {
+  const today = todayIso();
+  return o.cards
+    .filter((c) => c.open && c.closed)
+    .map((c) => (c.closed!.due >= today && c.closed!.total > 0 ? { name: c.name, due: c.closed!.due, total: c.closed!.total, closed: true } : { name: c.name, due: c.open!.due, total: c.open!.total, closed: false }))
+    .filter((b) => b.total > 0)
+    .sort((a, b) => a.due.localeCompare(b.due));
+}
+
+export function hubNumbers(o: Overview, invest: number) {
+  const cash = o.accounts.reduce((s, a) => s + a.balance, 0);
+  const cardDebt = o.cards.reduce((s, c) => s + Math.min(0, c.balance), 0);
+  const bills = upcomingBills(o);
+  return { cash, net: invest + cash + cardDebt, result: o.income - o.expense, bills, billsTotal: bills.reduce((s, b) => s + b.total, 0) };
+}
+
+/** Card "Este mês" do Resumo: sobra, maiores gastos e próximos vencimentos. */
+export async function mountFinSummary(el: HTMLElement, open: () => void) {
+  const o = cachedOverview() ?? (await getOverview());
+  if (!el.isConnected) return;
+  if (!o) {
+    el.innerHTML = `<div class="card hub-card hub-empty"><h2>Este mês</h2><p class="muted">Conecte o Firefly III para ver aqui o que entrou, o que saiu, os gastos por categoria e as faturas dos cartões.</p><button class="ghost" id="fin-open">Conectar finanças ›</button></div>`;
+  } else {
+    const result = o.income - o.expense;
+    const bills = upcomingBills(o).slice(0, 3);
+    const top = o.categories.slice(0, 4);
+    const max = top[0]?.value ?? 1;
+    el.innerHTML = `<div class="card hub-card">
+      <div class="row-between"><h2 style="margin:0">${MONTHS[Number(o.month.slice(5)) - 1]} em resumo</h2><button class="link" id="fin-open">Ver finanças</button></div>
+      <p class="muted small" style="margin:0">Saiu <b>${money(o.expense)}</b> · sobrou <b class="${result >= 0 ? "up" : "down"}">${money(result)}</b>${top.length ? " · maiores gastos:" : ""}</p>
+      ${
+        top.length
+          ? `<div class="fin-cats hub-cats">${top
+              .map((c, i) => `<div class="fin-cat"><div class="row-between"><span>${esc(c.name)}</span><span class="num">${money(c.value)}</span></div><div class="track"><div class="fill" style="width:${(c.value / max) * 100}%;background:${PALETTE[i % PALETTE.length]}"></div></div></div>`)
+              .join("")}</div>`
+          : `<p class="muted small" style="margin:0">Nenhum gasto lançado neste mês.</p>`
+      }
+      ${bills.length ? `<div class="hub-bills"><span class="muted small">Próximos vencimentos</span>${bills.map((b) => `<div class="row-between"><span><span class="ico" style="--icon: url(icons/card-outline.svg)"></span>${esc(b.name)} <span class="muted small">${b.closed ? "fechada" : "aberta"} · vence ${day(b.due)}</span></span><b>${money(b.total)}</b></div>`).join("")}</div>` : ""}
+    </div>`;
+  }
+  el.querySelector("#fin-open")!.addEventListener("click", open);
 }

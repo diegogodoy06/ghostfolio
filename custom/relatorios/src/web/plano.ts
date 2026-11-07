@@ -367,22 +367,66 @@ export async function mountPlanSummary(el: HTMLElement, r: Report, open: () => v
   const ty = Number(thisMonth().slice(0, 4));
   const y = p.years[String(ty)]?.length ? ty : defaultYear();
   const { items, evals } = await computeYear(r, y, p);
-  if (!el.isConnected || !items.length) return void (el.innerHTML = "");
+  if (!el.isConnected) return;
+  if (!items.length) {
+    el.innerHTML = `<div class="card hub-card hub-empty"><h2>Meu ${y}</h2><p class="muted">Metas de todo tipo para o ano: saúde, carreira, estudos, viagens e as financeiras, que se atualizam sozinhas.</p><button class="ghost" id="plan-open">Montar meu ${y} ›</button></div>`;
+    el.querySelector("#plan-open")!.addEventListener("click", () => {
+      setYear(y);
+      open();
+    });
+    return;
+  }
   const done = evals.filter(isAchieved).length;
-  const attention = items
+  const ty2 = Number(thisMonth().slice(0, 4));
+  const curMonth = thisMonth();
+  // Metas de vida em aberto, com ação rápida; financeiras que pedem atenção, como etiquetas.
+  const life = items
     .map((it, i) => ({ it, e: evals[i]! }))
-    .filter((x) => x.e.status === "atencao" || x.e.status === "fora" || x.e.status === "aberta")
+    .filter((x) => isLife(x.it.kind) && !isAchieved(x.e) && x.e.status !== "futuro")
     .slice(0, 5);
-  el.innerHTML = `<div class="card plan-sum">
+  const fin = items
+    .map((it, i) => ({ it, e: evals[i]! }))
+    .filter((x) => !isLife(x.it.kind) && (x.e.status === "atencao" || x.e.status === "fora"))
+    .slice(0, 3);
+  const action = (it: PlanItem, e: PlanEval) =>
+    it.kind === "feito"
+      ? `<button class="plan-check" data-quick="${esc(it.id)}" aria-label="Marcar como feita" title="Marcar como feita">✓</button>`
+      : it.kind === "contagem"
+        ? `<span class="hub-count">${e.current ?? 0}/${it.value}</span><button class="primary hub-plus" data-quick="${esc(it.id)}" aria-label="Somar 1">+1</button>`
+        : (it.months ?? []).includes(curMonth)
+          ? `<span class="badge buy">${MONTHS[Number(curMonth.slice(5)) - 1]} ✓</span>`
+          : `<button class="ghost hub-month" data-quick="${esc(it.id)}">Cumpri ${MONTHS[Number(curMonth.slice(5)) - 1]?.toLowerCase()}</button>`;
+  el.innerHTML = `<div class="card hub-card plan-sum">
     <div class="row-between"><h2 style="margin:0">Meu ${y}</h2><button class="link" id="plan-open">Ver metas</button></div>
     <div class="track plan-score"><div class="fill" style="width:${((done / items.length) * 100).toFixed(1)}%"></div></div>
-    <p class="muted small" style="margin:0"><b>${done} de ${items.length}</b> cumpridas${attention.length ? " · em aberto ou pedindo atenção:" : ""}</p>
-    ${attention.length ? `<div class="plan-sum-list">${attention.map((x) => `<span class="chip-static"><span class="dot" style="background:${areaOf(x.it).color}"></span>${esc(itemTitle(x.it, money))}</span>`).join("")}</div>` : ""}
+    <p class="muted small" style="margin:0"><b>${done} de ${items.length}</b> cumpridas</p>
+    ${
+      life.length && y === ty2
+        ? `<div class="hub-goals">${life
+            .map(
+              ({ it, e }) => `<div class="hub-goal"><span class="dot" style="background:${areaOf(it).color}"></span><span class="t">${esc(itemTitle(it, money))}</span>${action(it, e)}</div>`,
+            )
+            .join("")}</div>`
+        : ""
+    }
+    ${fin.length ? `<div class="plan-sum-list">${fin.map((x) => `<span class="chip-static"><span class="dot" style="background:${x.e.status === "fora" ? "var(--down)" : "var(--warn)"}"></span>${esc(itemTitle(x.it, money))}</span>`).join("")}</div>` : ""}
   </div>`;
   el.querySelector("#plan-open")!.addEventListener("click", () => {
     setYear(y);
     open();
   });
+  el.querySelectorAll<HTMLButtonElement>("[data-quick]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const it = items.find((x) => x.id === b.dataset.quick)!;
+      if (it.kind === "feito") it.done = todayIso();
+      else if (it.kind === "contagem") (it.log ??= []).push({ date: todayIso(), n: 1 });
+      else it.months = [...new Set([...(it.months ?? []), curMonth])].sort();
+      b.disabled = true;
+      await savePlan();
+      toast(it.kind === "contagem" ? `${itemTitle(it, money)}: +1` : `${itemTitle(it, money)}: marcado`);
+      void mountPlanSummary(el, r, open);
+    }),
+  );
 }
 
 // ---------- criar / editar ----------
