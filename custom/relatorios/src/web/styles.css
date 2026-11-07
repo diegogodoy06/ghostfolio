@@ -1132,3 +1132,17 @@ button.card.kpi:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3
 .fin-inv-chips .chip { border-radius: 10px; }
 .fin-inv-chips .chip[aria-pressed="true"] { border-color: var(--line-2); }
 @media (max-width: 760px) { .fin-month { width: 100%; justify-content: space-between; } }
+
+/* ---------- Carteira, Proventos, Rentabilidade ---------- */
+.period-row .chips { margin: 0; }
+.months td { padding: 4px 3px; }
+.months .hm { display: grid; gap: 1px; padding: 7px 8px; border-radius: 8px; text-align: right; }
+.months .hm b { font-weight: 500; font-size: 13px; }
+.months td:last-child .hm { background: var(--card-3); }
+.months-m .mc.pos { background: rgba(67, 214, 107, 0.12); }
+.months-m .mc.neg { background: rgba(240, 79, 85, 0.12); }
+details.cat > summary .ring { border-radius: 14px !important; border-width: 2px !important; font-weight: 600; }
+details.cat > summary .t { font-weight: 600; }
+details.cat > summary .chev { color: var(--muted); }
+.kpi .value small { font-size: 0.5em; color: var(--muted); }
+.kpi .value.txt { font-size: clamp(18px, 1.6vw, 22px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.02em; }

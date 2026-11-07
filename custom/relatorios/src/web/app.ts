@@ -4,7 +4,7 @@ import {
 } from "chart.js";
 import type { CategoryGroup, Position, Report } from "../shared";
 import { PERIODS, type PeriodId, gainBetween, indexSeries, monthlyTable, periodStart, real, rebased, ret, stats } from "./calc";
-import { ACCENT, CATEGORY_COLOR, MOBILE_QUERY, MONTHS, PALETTE, axisMoney, countUp, dateBR, esc, fadeFill, growBars, isMobile, privacy, toast, money, openModal, pct, qty, skeleton, spinDonut, spct, tone, xTicks } from "./ui";
+import { ACCENT, CATEGORY_COLOR, MOBILE_QUERY, MONTHS, PALETTE, axisMoney, countUp, dateBR, esc, fadeFill, growBars, hatch, highlightPlugin, isMobile, privacy, toast, money, openModal, pct, qty, skeleton, spinDonut, spct, tone, xTicks } from "./ui";
 import { mountSimSummary, renderCarteiraSim, simOutlook } from "./simulacao";
 import { openClaudeModal } from "./claude";
 import { mountGoalsSummary, renderMetas } from "./metas";
@@ -264,9 +264,9 @@ function donut(canvas: HTMLCanvasElement, labels: string[], values: number[], co
   charts.push(
     new Chart(canvas, {
       type: "doughnut",
-      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: "#141615", borderWidth: 2 }] },
+      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0, borderRadius: 6, spacing: 3 }] },
       options: {
-        cutout: "68%",
+        cutout: "76%",
         maintainAspectRatio: false,
         animation: spinDonut(),
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.label}: ${money(c.parsed)} (${pct(c.parsed / values.reduce((s, v) => s + v, 0), 1)})` } } },
@@ -509,9 +509,18 @@ const wireModeBar = () =>
 function renderCarteira(r: Report) {
   if (state.carteiraMode === "sim") return renderCarteiraSim(r, main, modeBar(), wireModeBar);
   const total = r.summary.value;
+  const s = r.summary;
+  const all = r.categories.flatMap((c) => c.positions).sort((a, b) => b.value - a.value);
+  const top = all[0];
   main.innerHTML =
     modeBar() +
-    `<section class="split"><div class="card"><h2>Minha carteira · ${money(total)}</h2><div class="chart-box donut"><canvas id="alloc"></canvas></div></div>
+    `<section class="kpis">
+      <div class="card kpi"><div class="label">Patrimônio investido</div><div class="value">${money(total)}</div><span class="delta ${s.gain >= 0 ? "up" : "down"}">${spct(s.gainPct)} sobre o custo</span></div>
+      <div class="card kpi"><div class="label">Valorização</div><div class="value">${money(s.gain)}</div><span class="sub">custo ${money(s.cost)}</span></div>
+      <div class="card kpi"><div class="label">Proventos 12 meses</div><div class="value">${money(s.income12m)}</div><span class="delta up">yield ${pct(s.yield12m)}</span></div>
+      <div class="card kpi"><div class="label">Maior posição</div><div class="value txt" title="${top ? esc(top.name) : ""}">${top ? esc(top.ticker) : "—"}</div><span class="sub">${top ? `${pct(top.weight, 1)} da carteira · ${all.length} ativos` : ""}</span></div>
+    </section>
+    <section class="split"><div class="card"><h2>Minha carteira · ${money(total)}</h2><div class="chart-box donut"><canvas id="alloc"></canvas></div></div>
      <div class="card"><h2>Por categoria</h2><div id="cat-legend">${legendList(r.categories.map((c) => ({ label: c.name, value: c.value, weight: c.weight, color: CATEGORY_COLOR[c.name] ?? PALETTE[8]! })))}</div><p class="sim-hint" id="cat-missing" hidden></p>
      <p class="note">Ajuste a categoria de um ativo em <code>extratos/categorias.json</code>.</p></div></section>` +
     r.categories
@@ -606,7 +615,7 @@ function assetModal(r: Report, ticker: string) {
       labels: months.map((x) => `${MONTHS[Number(x.slice(5)) - 1]}/${x.slice(2, 4)}`),
       datasets: [
         { label: "Recebido", data: months.map((x) => incomes.filter((i) => !i.estimated && i.date.startsWith(x)).reduce((s, i) => s + i.value, 0)), backgroundColor: ACCENT, borderRadius: 3, stack: "s" },
-        { label: "Estimado", data: months.map((x) => incomes.filter((i) => i.estimated && i.date.startsWith(x)).reduce((s, i) => s + i.value, 0)), backgroundColor: "rgba(54,207,204,0.35)", borderRadius: 3, stack: "s" },
+        { label: "Estimado", data: months.map((x) => incomes.filter((i) => i.estimated && i.date.startsWith(x)).reduce((s, i) => s + i.value, 0)), backgroundColor: hatch("rgba(243,245,244,0.55)", "rgba(243,245,244,0.04)"), borderRadius: 3, stack: "s" },
       ],
     },
     options: {
@@ -665,7 +674,7 @@ function renderProventos(r: Report) {
 
   main.innerHTML = `
     <section class="kpis">
-      <div class="card kpi"><div class="label">Últimos 12 meses</div><div class="value">${money(last12)}</div><div class="sub">média ${money(last12 / 12)}/mês</div></div>
+      <div class="card kpi"><div class="label">Últimos 12 meses</div><div class="value">${money(last12)}</div><span class="delta up">média ${money(last12 / 12)}/mês</span></div>
       <div class="card kpi"><div class="label">Em ${y}</div><div class="value">${money(sum((i) => i.date.startsWith(y)))}</div><div class="sub">yield 12m ${pct(r.summary.yield12m)}</div></div>
       <div class="card kpi"><div class="label">Total recebido</div><div class="value">${money(r.summary.incomeTotal - estimated)}</div><div class="sub">desde ${dateBR(r.firstDate)}</div></div>
       <div class="card kpi"><div class="label">A receber (estimado)</div><div class="value">${money(estimated)}</div><div class="sub">anunciados, ainda fora do extrato</div></div>
@@ -708,7 +717,7 @@ function renderProventos(r: Report) {
         labels: months.map((m) => `${MONTHS[Number(m.slice(5)) - 1]}/${m.slice(2, 4)}`),
         datasets: [
           ...cats.map((c) => ({ label: c, data: months.map((m) => val(m, c, false)), backgroundColor: CATEGORY_COLOR[c] ?? PALETTE[8]!, borderRadius: 3, stack: "s" })),
-          { label: "Estimado", data: months.map((m) => cats.reduce((s, c) => s + val(m, c, true), 0)), backgroundColor: "rgba(54,207,204,0.35)", borderRadius: 3, stack: "s" },
+          { label: "Estimado", data: months.map((m) => cats.reduce((s, c) => s + val(m, c, true), 0)), backgroundColor: hatch("rgba(243,245,244,0.55)", "rgba(243,245,244,0.04)"), borderRadius: 3, stack: "s" },
         ],
       },
       options: {
@@ -730,11 +739,28 @@ function renderRentabilidade(r: Report) {
   const from = periodStart(state.period, r.firstDate, end);
   const st = stats(r, from, end);
   const rows = monthlyTable(r);
-  const cell = (m: { ret: number; cdi: number | null } | null) =>
-    m ? `<td><span class="${tone(m.ret)}">${pct(m.ret)}</span><span class="c">${m.cdi ? `${pct(m.ret / m.cdi, 0)} CDI` : ""}</span></td>` : `<td class="muted">—</td>`;
+  const maxAbs = Math.max(0.005, ...rows.flatMap((row) => row.months.map((m) => Math.abs(m?.ret ?? 0))));
+  const heat = (v: number) => {
+    const a = Math.min(1, Math.abs(v) / maxAbs);
+    return v >= 0 ? `background:rgba(67,214,107,${(0.08 + a * 0.32).toFixed(3)})` : `background:rgba(240,79,85,${(0.08 + a * 0.32).toFixed(3)})`;
+  };
+  const cell = (m: { ret: number; cdi: number | null } | null, year = false) =>
+    m ? `<td><span class="hm" style="${year ? "" : heat(m.ret)}"><b>${pct(m.ret)}</b><span class="c">${m.cdi ? `${pct(m.ret / m.cdi, 0)} CDI` : ""}</span></span></td>` : `<td class="muted">—</td>`;
+  const nominal = ret(indexSeries(r), from, end);
+  const cdi = ret(r.benchmarks.cdi!.points, from, end);
+  const gainP = gainBetween(r.daily, from, end);
+  const last12 = [...rows].sort((a, b) => a.year - b.year).flatMap((row) => row.months.map((m, k) => (m ? { key: `${row.year}-${k}`, label: `${MONTHS[k]}/${String(row.year).slice(2)}`, ...m } : null))).filter((x): x is NonNullable<typeof x> => !!x).slice(-12);
   main.innerHTML = `
+    <section class="period-row">${periodChips()}</section>
+    <section class="kpis">
+      <div class="card kpi"><div class="label">Rentabilidade no período</div><div class="value">${pct(nominal)}</div><span class="delta ${nominal != null && cdi != null && nominal >= cdi ? "up" : "down"}">CDI ${pct(cdi)}</span></div>
+      <div class="card kpi"><div class="label">Em relação ao CDI</div><div class="value">${nominal != null && cdi ? pct(nominal / cdi, 0) : "—"}</div><span class="sub">do CDI no período</span></div>
+      <div class="card kpi"><div class="label">Rendimento</div><div class="value">${money(gainP)}</div><span class="delta ${gainP >= 0 ? "up" : "down"}">com proventos</span></div>
+      <div class="card kpi"><div class="label">Meses acima do CDI</div><div class="value">${st.beatCdi}<small>/${st.months}</small></div><span class="sub">${st.positiveMonths} meses positivos</span></div>
+    </section>
+    <section class="card"><div class="row-between"><h2 style="margin:0">Carteira × CDI, mês a mês</h2><span class="muted small">últimos 12 meses</span></div><div class="chart-box"><canvas id="ret-bars"></canvas></div></section>
     <section class="card"><h2>Rentabilidade mensal</h2><div class="scroll months-wrap"><table class="months"><thead><tr><th>Ano</th>${MONTHS.map((m) => `<th>${m}</th>`).join("")}<th>Ano</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td><b>${row.year}</b></td>${row.months.map(cell).join("")}${cell(row.year_)}</tr>`).join("")}</tbody></table></div>
+      <tbody>${rows.map((row) => `<tr><td><b>${row.year}</b></td>${row.months.map((m) => cell(m)).join("")}${cell(row.year_, true)}</tr>`).join("")}</tbody></table></div>
       <div class="months-m">${rows
         .map(
           (row) => `<div class="my"><div class="my-head"><b>${row.year}</b>${row.year_ ? `<span class="${tone(row.year_.ret)}">${pct(row.year_.ret)}</span>` : ""}</div>
@@ -744,7 +770,7 @@ function renderRentabilidade(r: Report) {
         )
         .join("")}</div>
       <p class="note">Rentabilidade por cota com proventos. Abaixo de cada mês, quanto ele representou do CDI.</p></section>
-    <section class="card"><h2>Estatísticas</h2>${periodChips()}
+    <section class="card"><h2>Estatísticas do período</h2>
       <div class="stats">
         <div class="stat"><div class="l">Volatilidade (anual)</div><div class="v">${pct(st.volatility)}</div></div>
         <div class="stat"><div class="l">Maior queda</div><div class="v down">${pct(st.maxDrawdown)}</div></div>
@@ -757,6 +783,33 @@ function renderRentabilidade(r: Report) {
       </div>
       <p class="note">Sharpe: retorno anual acima do CDI dividido pela volatilidade. Maior queda: pior perda do topo ao fundo no período.</p></section>`;
   wireCommon();
+  const lastI = last12.length - 1;
+  charts.push(
+    new Chart(document.getElementById("ret-bars") as HTMLCanvasElement, {
+      data: {
+        labels: last12.map((m) => m.label),
+        datasets: [
+          {
+            type: "bar",
+            label: "Carteira",
+            data: last12.map((m) => Math.round(m.ret * 10000) / 100),
+            backgroundColor: last12.map((m, i) => (i === lastI ? (m.ret >= 0 ? "#43d66b" : "#f04f55") : m.ret >= 0 ? hatch("rgba(67,214,107,0.7)", "rgba(67,214,107,0.06)") : hatch("rgba(240,79,85,0.7)", "rgba(240,79,85,0.06)"))),
+            borderRadius: 999,
+            borderSkipped: false,
+            barPercentage: 0.6,
+            order: 2,
+          },
+          { type: "line", label: "CDI", data: last12.map((m) => (m.cdi == null ? null : Math.round(m.cdi * 10000) / 100)), borderColor: "#8b8ff8", borderWidth: 1.5, backgroundColor: "#0b0c0c", pointBorderColor: "#8b8ff8", pointBorderWidth: 1.5, pointRadius: 3, tension: 0.3, order: 1 },
+        ],
+      },
+      plugins: [highlightPlugin],
+      options: {
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: (c: { dataset: { label?: string }; raw: unknown }) => ` ${c.dataset.label}: ${Number(c.raw).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` } }, highlight: { index: lastI, text: last12[lastI] ? pct(last12[lastI]!.ret) : "" } } as any,
+        scales: { x: { grid: { display: false } }, y: { ticks: { callback: (v) => `${v}%` } } },
+      },
+    }),
+  );
 }
 
 // ---------- eventos globais ----------
