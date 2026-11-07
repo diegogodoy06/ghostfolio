@@ -23,7 +23,7 @@ import {
   todayIso,
 } from "./fin-common";
 import { openBudget, openCardConfig, openPlanned, openTx } from "./fin-forms";
-import { ACCENT, MONTHS, PALETTE, axisMoney, esc, money } from "./ui";
+import { ACCENT, MONTHS, PALETTE, axisMoney, esc, hatch, money } from "./ui";
 
 export interface ViewCtx {
   month: string;
@@ -31,8 +31,11 @@ export interface ViewCtx {
   refresh: () => void;
 }
 const moneyTip = { callbacks: { label: (c: { dataset: { label?: string }; raw: unknown }) => `${c.dataset.label ? `${c.dataset.label}: ` : ""}${money(Number(c.raw))}` } };
-const RED = PALETTE[1]!;
-const GREEN = "#199e70";
+const RED = "#f04f55";
+const rgba = (hex: string, a: number) => `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
+/** Sólido até `solidUpTo` (inclusive), hachurado depois: o que é futuro/projetado fica listrado. */
+const solidThenHatch = (hex: string, n: number, solidUpTo: number) => Array.from({ length: n }, (_, i) => (i <= solidUpTo ? hex : hatch(rgba(hex, 0.75), rgba(hex, 0.08))));
+const GREEN = "#43d66b";
 
 // ---------- lista de lançamentos (com edição) ----------
 
@@ -144,7 +147,7 @@ export async function viewCartoes(body: HTMLElement, ctx: ViewCtx) {
   ctx.charts.push(
     new Chart(body.querySelector<HTMLCanvasElement>("#cc-ahead")!, {
       type: "bar",
-      data: { labels: ahead.map(shortMonth), datasets: books.map((b, i) => ({ label: b.name, data: ahead.map((m) => committed(b, m)), backgroundColor: cardColor(i), borderRadius: 3, stack: "c" })) },
+      data: { labels: ahead.map(shortMonth), datasets: books.map((b, i) => ({ label: b.name, data: ahead.map((m) => committed(b, m)), backgroundColor: solidThenHatch(cardColor(i), ahead.length, 1), borderRadius: 4, stack: "c" })) },
       options: {
         maintainAspectRatio: false,
         plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { ...moneyTip.callbacks, footer: (items) => `Total: ${money(items.reduce((s, x) => s + Number(x.raw), 0))}` } } },
@@ -170,7 +173,7 @@ function drawBook(el: HTMLElement, b: CardBook, idx: number, ctx: ViewCtx) {
       ${
         limit
           ? `<div class="fin-limit"><div class="row-between small"><span>Usado <b>${money(debt)}</b> de ${money(limit)}</span><span class="muted">disponível ${money(Math.max(0, limit - debt))}</span></div>
-             <div class="track"><div class="fill" style="width:${Math.min(100, (debt / limit) * 100)}%"></div></div></div>`
+             <div class="meter-wrap" style="--p:${Math.min(100, (debt / limit) * 100)}"><div class="meter rev"></div></div></div>`
           : `<p class="muted small" style="margin:0">Devendo hoje <b>${money(debt)}</b> (todas as faturas em aberto).</p>`
       }
       <div class="split fin-book-grid">
@@ -190,8 +193,8 @@ function drawBook(el: HTMLElement, b: CardBook, idx: number, ctx: ViewCtx) {
           labels: months.map(shortMonth),
           datasets: [
             { label: "Lançado", data: months.map((m) => inv(m).posted), backgroundColor: cardColor(idx), borderRadius: 3, stack: "f" },
-            { label: "Parcelas futuras", data: months.map((m) => inv(m).installments), backgroundColor: `${cardColor(idx)}99`, borderRadius: 3, stack: "f" },
-            { label: "Previstos", data: months.map((m) => inv(m).planned), backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 3, stack: "f" },
+            { label: "Parcelas futuras", data: months.map((m) => inv(m).installments), backgroundColor: hatch(rgba(cardColor(idx), 0.8), rgba(cardColor(idx), 0.08)), borderRadius: 3, stack: "f" },
+            { label: "Previstos", data: months.map((m) => inv(m).planned), backgroundColor: hatch(), borderRadius: 3, stack: "f" },
           ],
         },
         options: {
@@ -336,7 +339,7 @@ export async function viewCategorias(body: HTMLElement, ctx: ViewCtx) {
           labels: top.map(([c]) => c),
           datasets: [
             { label: "Este mês", data: top.map(([, v]) => v), backgroundColor: ACCENT, borderRadius: 3 },
-            { label: "Média", data: top.map(([c]) => Math.max(0, avgOf(c))), backgroundColor: "rgba(255,255,255,0.22)", borderRadius: 3 },
+            { label: "Média", data: top.map(([c]) => Math.max(0, avgOf(c))), backgroundColor: hatch(), borderRadius: 3 },
           ],
         },
         options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { position: "bottom" }, tooltip: moneyTip }, scales: { x: { min: 0, ticks: { callback: (v) => axisMoney(v) } }, y: { grid: { display: false } } } },
@@ -395,9 +398,9 @@ export function flowChart(canvas: HTMLCanvasElement, rows: { month: string; inco
     data: {
       labels: rows.map((r) => shortMonth(r.month)),
       datasets: [
-        { type: "bar", label: "Entradas", data: rows.map((r) => r.income), backgroundColor: ACCENT, borderRadius: 4, order: 2 },
-        { type: "bar", label: "Saídas", data: rows.map((r) => r.expense), backgroundColor: RED, borderRadius: 4, order: 2 },
-        { type: "line", label: "Sobra", data: rows.map((r) => Math.round((r.income - r.expense) * 100) / 100), borderColor: "#fff", backgroundColor: "#fff", pointRadius: 3, tension: 0.3, order: 1 },
+        { type: "bar", label: "Entradas", data: rows.map((r) => r.income), backgroundColor: rows.map((_, i) => (i === rows.length - 1 ? ACCENT : hatch(rgba(ACCENT, 0.7), rgba(ACCENT, 0.06)))), borderRadius: 999, borderSkipped: false, barPercentage: 0.7, order: 2 },
+        { type: "bar", label: "Saídas", data: rows.map((r) => r.expense), backgroundColor: rows.map((_, i) => (i === rows.length - 1 ? RED : hatch(rgba(RED, 0.7), rgba(RED, 0.06)))), borderRadius: 999, borderSkipped: false, barPercentage: 0.7, order: 2 },
+        { type: "line", label: "Sobra", data: rows.map((r) => Math.round((r.income - r.expense) * 100) / 100), borderColor: "rgba(243,245,244,0.85)", borderWidth: 1.5, backgroundColor: "#0b0c0c", pointBorderColor: "rgba(243,245,244,0.9)", pointBorderWidth: 1.5, pointRadius: 3.5, tension: 0.35, order: 1 },
       ],
     },
     options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" }, tooltip: moneyTip }, scales: { y: { ticks: { callback: (v) => axisMoney(v) } }, x: { grid: { display: false } } } },
@@ -430,10 +433,10 @@ export async function viewPrevistos(body: HTMLElement, ctx: ViewCtx) {
 
   body.innerHTML = `
     <section class="kpis">
-      <div class="card kpi"><div class="label">Entradas fixas</div><div class="value up">${money(monthly("income"))}</div><div class="sub">por mês</div></div>
-      <div class="card kpi"><div class="label">Saídas fixas</div><div class="value down">${money(monthly("expense"))}</div><div class="sub">contas e assinaturas por mês</div></div>
+      <div class="card kpi"><div class="label">Entradas fixas</div><div class="value">${money(monthly("income"))}</div><span class="delta up">por mês</span></div>
+      <div class="card kpi"><div class="label">Saídas fixas</div><div class="value">${money(monthly("expense"))}</div><span class="delta down">contas e assinaturas por mês</span></div>
       <div class="card kpi"><div class="label">Em contas hoje</div><div class="value">${money(fc.cash)}</div><div class="sub">ponto de partida da projeção</div></div>
-      <div class="card kpi"><div class="label">Saldo projetado</div><div class="value ${fc.months.at(-1)!.balance >= 0 ? "" : "down"}">${money(fc.months.at(-1)!.balance)}</div><div class="sub">em ${monthName(fc.months.at(-1)!.month).toLowerCase()}</div></div>
+      <div class="card kpi"><div class="label">Saldo projetado</div><div class="value">${money(fc.months.at(-1)!.balance)}</div><span class="delta ${fc.months.at(-1)!.balance >= fc.cash ? "up" : "down"}">em ${monthName(fc.months.at(-1)!.month).toLowerCase()}</span></div>
     </section>
     <section class="card"><div class="row-between"><h2>Fluxo de caixa projetado</h2><span class="muted small">previstos + faturas dos cartões</span></div>
       <div class="chart-box tall"><canvas id="fc-chart"></canvas></div>
@@ -469,11 +472,11 @@ export async function viewPrevistos(body: HTMLElement, ctx: ViewCtx) {
       data: {
         labels,
         datasets: [
-          { type: "bar", label: "Entradas", data: fc.months.map((m) => m.income + Math.max(0, m.scheduled)), backgroundColor: GREEN, borderRadius: 3, stack: "in", order: 2 },
-          { type: "bar", label: "Dia a dia", data: fc.months.map((m) => m.variable), backgroundColor: "rgba(255,255,255,0.28)", borderRadius: 3, stack: "out", order: 2 },
-          { type: "bar", label: "Contas e assinaturas", data: fc.months.map((m) => m.expense), backgroundColor: RED, borderRadius: 3, stack: "out", order: 2 },
-          ...cardNames.map((n, i) => ({ type: "bar" as const, label: n, data: fc.months.map((m) => m.cards.find((c) => c.name === n)?.value ?? 0), backgroundColor: cardColor(i), borderRadius: 3, stack: "out", order: 2 })),
-          { type: "line", label: "Saldo projetado", data: fc.months.map((m) => m.balance), borderColor: "#fff", backgroundColor: "#fff", pointRadius: 3, tension: 0.25, order: 1 },
+          { type: "bar", label: "Entradas", data: fc.months.map((m) => m.income + Math.max(0, m.scheduled)), backgroundColor: solidThenHatch(GREEN, fc.months.length, 0), borderRadius: 3, stack: "in", order: 2 },
+          { type: "bar", label: "Dia a dia", data: fc.months.map((m) => m.variable), backgroundColor: hatch(), borderRadius: 3, stack: "out", order: 2 },
+          { type: "bar", label: "Contas e assinaturas", data: fc.months.map((m) => m.expense), backgroundColor: solidThenHatch(RED, fc.months.length, 0), borderRadius: 3, stack: "out", order: 2 },
+          ...cardNames.map((n, i) => ({ type: "bar" as const, label: n, data: fc.months.map((m) => m.cards.find((c) => c.name === n)?.value ?? 0), backgroundColor: solidThenHatch(cardColor(i), fc.months.length, 0), borderRadius: 3, stack: "out", order: 2 })),
+          { type: "line", label: "Saldo projetado", data: fc.months.map((m) => m.balance), borderColor: "rgba(243,245,244,0.9)", borderWidth: 1.5, backgroundColor: "#0b0c0c", pointBorderColor: "rgba(243,245,244,0.9)", pointBorderWidth: 1.5, pointRadius: 3.5, tension: 0.3, order: 1 },
         ],
       },
       options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" }, tooltip: moneyTip }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: (v) => axisMoney(v) } } } },

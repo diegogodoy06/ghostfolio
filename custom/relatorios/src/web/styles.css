@@ -1010,7 +1010,7 @@ button.fin-plan-row:hover { background: var(--card-2); }
 }
 .fin-planned { max-height: 460px; overflow-y: auto; scrollbar-width: thin; }
 @media (max-width: 760px) {
-  .fin-actions { display: grid; grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr); }
+  .fin-actions { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); }
   .fin-actions .ghost-link span:last-child { display: none; }
   .fin-actions .ghost, .fin-actions .primary { padding: 0 10px; min-width: 0; }
 }
@@ -1111,3 +1111,24 @@ button.card.kpi:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3
 .meter { display: block; }
 .hub-kpis.five .kpi .value { font-size: clamp(21px, 1.85vw, 30px); }
 .hub-kpis.five .kpi .delta { font-size: 12px; }
+
+/* ---------- Finanças no novo estilo ---------- */
+.toggle.seg { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+.toggle.seg button { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; white-space: nowrap; }
+.toggle.seg button .ico { width: 16px; height: 16px; }
+.fin-views { margin: 0; }
+.fin-month { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 6px; width: fit-content; }
+.fin-month .icon { min-width: 32px; height: 32px; border: 0; background: transparent; }
+.fin-month b { font-weight: 600; font-size: 14px; }
+.fin-pl .mark { border-radius: 6px; }
+.fin-pl.ok .mark { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.fin-meta-row .track, .fin-cat .track { height: 8px; background: rgba(255, 255, 255, 0.05); }
+.fin-meta-row .fill { background: linear-gradient(90deg, rgba(67, 214, 107, 0.55), #43d66b); }
+.fin-meta-row .fill.over, .fin-cat .fill.over { background: linear-gradient(90deg, rgba(240, 79, 85, 0.55), #f04f55) !important; }
+.meter.rev { background: linear-gradient(90deg, #43d66b, #f3c623 60%, #f04f55); }
+.fin-card .meter-wrap::after { background: #1b1d1c; }
+.fin-table th { background: rgba(255, 255, 255, 0.03); }
+.fin-gauge .ring { background: radial-gradient(closest-side, var(--card) 78%, transparent 80%), conic-gradient(var(--accent) calc(var(--p) * 1%), rgba(255, 255, 255, 0.07) 0); }
+.fin-inv-chips .chip { border-radius: 10px; }
+.fin-inv-chips .chip[aria-pressed="true"] { border-color: var(--line-2); }
+@media (max-width: 760px) { .fin-month { width: 100%; justify-content: space-between; } }

@@ -64,7 +64,25 @@ export class FireflyError extends Error {
   }
 }
 
+// Leituras repetidas (trocar de vista, voltar ao mês) saem de um cache curto; qualquer gravação o limpa.
+const readCache = new Map<string, { at: number; data: unknown }>();
+const tokenKey = (t: string) => crypto.createHash("sha1").update(t).digest("hex").slice(0, 12);
 export async function ff<T = any>(token: string, p: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  const method = init.method ?? "GET";
+  const key = `${tokenKey(token)}|${p}`;
+  if (method === "GET") {
+    const hit = readCache.get(key);
+    if (hit && Date.now() - hit.at < 60_000) return structuredClone(hit.data) as T;
+  } else for (const k of readCache.keys()) if (k.startsWith(`${tokenKey(token)}|`)) readCache.delete(k);
+  const data = await ffRaw<T>(token, p, init);
+  if (method === "GET") {
+    if (readCache.size > 500) readCache.clear();
+    readCache.set(key, { at: Date.now(), data: structuredClone(data) });
+  }
+  return data;
+}
+
+async function ffRaw<T = any>(token: string, p: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${FIREFLY_URL}/api/v1${p}`, {

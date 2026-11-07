@@ -41,6 +41,7 @@ const VIEWS: [View, string][] = [
   ["categorias", "Categorias"],
   ["previstos", "Previstos"],
 ];
+const VIEW_ICON: Record<View, string> = { mes: "grid-outline", lancamentos: "list-outline", cartoes: "card-outline", categorias: "bars-outline", previstos: "repeat-outline" };
 const KEY = "rel.finMonth";
 const VKEY = "rel.finView";
 let month = thisMonth();
@@ -79,9 +80,8 @@ export async function renderFinancas(r: Report, main: HTMLElement, charts: Chart
 
   main.innerHTML = `
     <section class="mode-bar fin-bar">
-      <div class="chips fin-views" role="tablist">${VIEWS.map(([v, l]) => `<button class="chip" role="tab" data-view="${v}" aria-pressed="${v === view}">${l}</button>`).join("")}</div>
+      <div class="toggle seg fin-views" role="tablist">${VIEWS.map(([v, l]) => `<button role="tab" data-view="${v}" aria-pressed="${v === view}"><span class="ico" style="--icon: url(icons/${VIEW_ICON[v]}.svg)"></span>${l}</button>`).join("")}</div>
       <div class="fin-actions">
-        ${ff ? `<a class="ghost-link" href="${esc(ff)}" target="_blank" rel="noopener" title="Abrir o Firefly"><span class="ico" style="--icon: url(icons/open-outline.svg)"></span><span>Firefly</span></a>` : ""}
         <button class="icon" id="fin-settings" title="Conexão com o Firefly" aria-label="Configurações"><span class="ico" style="--icon: url(icons/settings-outline.svg)"></span></button>
         <button class="ghost" id="fin-import"><span class="ico" style="--icon: url(icons/cloud-upload-outline.svg)"></span> Importar</button>
         <button class="primary" id="fin-add">+ Lançar</button>
@@ -153,8 +153,8 @@ async function viewMes(r: Report, body: HTMLElement, ctx: ViewCtx, main: HTMLEle
     <section class="kpis">
       <div class="card kpi"><div class="label">Patrimônio total</div><div class="value">${money(net)}</div><div class="sub">investimentos ${money(invest)} + contas − cartões</div></div>
       <div class="card kpi"><div class="label">Em contas</div><div class="value">${money(cash)}</div><div class="sub">${o.accounts.filter((a) => a.netWorth !== false).length} contas</div></div>
-      <div class="card kpi"><div class="label">Faturas a pagar</div><div class="value ${bills.length ? "down" : ""}">${money(bills.reduce((s, b) => s + b.total, 0))}</div><div class="sub">${bills[0] ? `${esc(bills[0].name)} vence ${day(bills[0].due)}` : "nada em aberto"}</div></div>
-      <div class="card kpi"><div class="label">Sobra do mês</div><div class="value ${result >= 0 ? "up" : "down"}">${money(result)}</div><div class="sub">${isCur && (pendIn || pendOut) ? `prevista ${money(result + pendIn - pendOut)} no fim do mês` : `entrou ${money(o.income)} · saiu ${money(o.expense)}`}</div></div>
+      <div class="card kpi"><div class="label">Faturas a pagar</div><div class="value">${money(bills.reduce((s, b) => s + b.total, 0))}</div>${bills[0] ? `<span class="delta down">${esc(bills[0].name)} vence ${day(bills[0].due)}</span>` : `<div class="sub">nada em aberto</div>`}</div>
+      <div class="card kpi"><div class="label">Sobra do mês</div><div class="value">${money(result)}</div><span class="delta ${result >= 0 ? "up" : "down"}">${o.income > 0 ? `${Math.round((result / o.income) * 100)}% das entradas` : `saiu ${money(o.expense)}`}</span><div class="sub">${isCur && (pendIn || pendOut) ? `prevista ${money(result + pendIn - pendOut)} no fim do mês` : `entrou ${money(o.income)} · saiu ${money(o.expense)}`}</div></div>
     </section>
     <section class="split">
       <div class="card">${plannedBlock(o)}</div>
@@ -252,7 +252,7 @@ function cardBlock(c: Card) {
       <div><span class="muted small">Fatura aberta</span><b>${money(c.open.total)}</b><span class="muted small">vence ${day(c.open.due)}</span></div>
       <div><span class="muted small">Última fechada</span><b>${money(c.closed.total)}</b><span class="muted small">${c.closed.due < todayIso() ? "venceu" : "vence"} ${day(c.closed.due)}</span></div>
     </div>
-    ${limit ? `<div class="fin-limit"><div class="row-between small"><span class="muted">limite usado</span><span>${money(debt)} / ${money(limit)}</span></div><div class="track"><div class="fill" style="width:${Math.min(100, (debt / limit) * 100)}%"></div></div></div>` : ""}
+    ${limit ? `<div class="fin-limit"><div class="row-between small"><span class="muted">limite usado</span><span>${money(debt)} / ${money(limit)}</span></div><div class="meter-wrap" style="--p:${Math.min(100, (debt / limit) * 100)}"><div class="meter rev"></div></div></div>` : ""}
     ${
       future.length
         ? `<div class="fin-future"><span class="muted small">Parcelas já compradas, por fatura · ${money(futureTotal)}</span><div>${future.map((f) => `<span class="chip-static">${MONTHS[Number(f.month.slice(5)) - 1]}/${f.month.slice(2, 4)} <b>${money(f.value)}</b></span>`).join("")}</div></div>`
