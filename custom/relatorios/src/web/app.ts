@@ -9,6 +9,7 @@ import { mountSimSummary, renderCarteiraSim, simOutlook } from "./simulacao";
 import { openClaudeModal } from "./claude";
 import { mountGoalsSummary, renderMetas } from "./metas";
 import { openExtratosModal } from "./extratos";
+import { renderFinancas } from "./financas";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
 Chart.defaults.color = "rgba(255,255,255,0.7)";
@@ -30,9 +31,9 @@ const BENCH = [
 ] as const;
 
 // ---------- estado ----------
-type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade" | "metas";
-const TABS: Tab[] = ["resumo", "carteira", "proventos", "rentabilidade", "metas"];
-const TITLES: Record<Tab, string> = { resumo: "Resumo", carteira: "Carteira", proventos: "Proventos", rentabilidade: "Rentabilidade", metas: "Metas" };
+type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade" | "metas" | "financas";
+const TABS: Tab[] = ["resumo", "carteira", "proventos", "rentabilidade", "metas", "financas"];
+const TITLES: Record<Tab, string> = { resumo: "Resumo", carteira: "Carteira", proventos: "Proventos", rentabilidade: "Rentabilidade", metas: "Metas", financas: "Finanças" };
 /** Hash inicial; "#simulacao" (endereço antigo) abre a Carteira já no modo simulação. */
 function tabFromHash(): Tab {
   const h = location.hash.slice(1);
@@ -151,7 +152,7 @@ function render(animate = true) {
       <p class="muted" style="margin:0">Com ela ligada, o Ghostfolio esconde quantidades e valores em tudo que entrega pela API, então os relatórios ficam zerados e a sincronização automática fica pausada. Desligue em <a href="${GHOSTFOLIO}account">Ghostfolio → Minha conta</a> e use o botão do olho aqui em cima para ocultar os valores nos relatórios.</p></div>`;
     return;
   }
-  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade, metas: (x: Report) => void renderMetas(x, main, charts) })[state.tab](r);
+  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade, metas: (x: Report) => void renderMetas(x, main, charts), financas: (x: Report) => void renderFinancas(x, main, charts) })[state.tab](r);
   if (animate) {
     void main.offsetWidth; // reinicia a animação de entrada
     main.classList.add("enter");

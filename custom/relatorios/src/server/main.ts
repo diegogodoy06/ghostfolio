@@ -14,6 +14,7 @@ import { quote } from "./quote";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./mcp";
 import { sameToken, seal, sealForSync, unseal, userDir, userIdOf } from "./users";
+import { FIREFLY_PUBLIC_URL, FireflyError, type ImportRow, accounts as finAccounts, existing, ff, importRows, overview, parseStatement, readConfig, sealToken, tokenOf, writeConfig } from "./financas";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
@@ -245,6 +246,85 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true });
       }
     }
+    // Finanças (Firefly III): conexão, visão geral, cartões e importação de extratos.
+    if (url.pathname.startsWith("/api/fin") && s) {
+      const cfg = readConfig(s.dir);
+      const fin = tokenOf(cfg);
+      if (url.pathname === "/api/fin" && req.method === "GET") {
+        return send(res, 200, { connected: !!fin, publicUrl: FIREFLY_PUBLIC_URL, cards: cfg.cards ?? {} });
+      }
+      if (url.pathname === "/api/fin/token") {
+        if (req.method === "DELETE") {
+          delete cfg.token;
+          delete cfg.connectedAt;
+          writeConfig(s.dir, cfg);
+          return send(res, 200, { ok: true });
+        }
+        if (req.method === "PUT") {
+          const { token } = (await readBody(req, 20_000)) as { token?: string };
+          if (!token || typeof token !== "string" || token.length < 20) return send(res, 400, { error: "Token inválido." });
+          try {
+            await ff(token.trim(), "/about/user");
+          } catch (e) {
+            const st = e instanceof FireflyError ? e.status : 502;
+            return send(res, 400, { error: st === 401 ? "O Firefly recusou este token." : (e as Error).message });
+          }
+          writeConfig(s.dir, { ...cfg, token: sealToken(token.trim()), connectedAt: new Date().toISOString() });
+          return send(res, 200, { ok: true });
+        }
+      }
+      if (!fin) return send(res, 409, { error: "Firefly III não conectado" });
+      if (url.pathname === "/api/fin/overview") {
+        const month = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") ?? "") ? url.searchParams.get("month")! : new Date().toISOString().slice(0, 7);
+        return send(res, 200, await overview(fin, cfg, month));
+      }
+      if (url.pathname === "/api/fin/accounts") return send(res, 200, await finAccounts(fin));
+      if (url.pathname === "/api/fin/cards" && req.method === "PUT") {
+        const { id, closing, due } = (await readBody(req)) as { id?: string; closing?: number; due?: number };
+        const day = (n: unknown) => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 31;
+        if (!id || !/^\d+$/.test(id)) return send(res, 400, { error: "cartão inválido" });
+        cfg.cards ??= {};
+        if (closing == null && due == null) delete cfg.cards[id];
+        else if (!day(closing) || !day(due)) return send(res, 400, { error: "Dias de fechamento e vencimento entre 1 e 31." });
+        else cfg.cards[id] = { closing: closing!, due: due! };
+        writeConfig(s.dir, cfg);
+        return send(res, 200, { ok: true });
+      }
+      if (url.pathname === "/api/fin/parse" && req.method === "POST") {
+        const name = path.basename(url.searchParams.get("name") ?? "extrato");
+        try {
+          const parsed = parseStatement(await readRaw(req, 5_000_000), name);
+          const suggested = parsed.accountKey ? (cfg.accounts?.[parsed.accountKey] ?? null) : null;
+          return send(res, 200, { ...parsed, suggested });
+        } catch (e) {
+          return send(res, 400, { error: (e as Error).message });
+        }
+      }
+      const rowsOf = (v: unknown): ImportRow[] | null => {
+        if (!Array.isArray(v) || v.length > 3000) return null;
+        const ok = v.every(
+          (r) =>
+            r && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && Number.isFinite(r.amount) && typeof r.description === "string" && typeof r.uid === "string" && (r.transferTo == null || /^\d+$/.test(r.transferTo)),
+        );
+        return ok ? (v as ImportRow[]) : null;
+      };
+      if (url.pathname === "/api/fin/check" && req.method === "POST") {
+        const body = (await readBody(req, 2_000_000)) as { accountId?: string; rows?: unknown };
+        const rows = rowsOf(body.rows);
+        if (!rows || !/^\d+$/.test(body.accountId ?? "")) return send(res, 400, { error: "dados inválidos" });
+        return send(res, 200, await existing(fin, body.accountId!, rows));
+      }
+      if (url.pathname === "/api/fin/import" && req.method === "POST") {
+        const body = (await readBody(req, 2_000_000)) as { accountId?: string; accountKey?: string | null; rows?: unknown };
+        const rows = rowsOf(body.rows);
+        if (!rows || !/^\d+$/.test(body.accountId ?? "")) return send(res, 400, { error: "dados inválidos" });
+        const key = typeof body.accountKey === "string" ? body.accountKey.slice(0, 200) : null;
+        const result = await importRows(fin, body.accountId!, key, rows);
+        if (key) writeConfig(s.dir, { ...readConfig(s.dir), accounts: { ...cfg.accounts, [key]: body.accountId! } });
+        return send(res, 200, result);
+      }
+      return send(res, 404, { error: "não encontrado" });
+    }
     // Arquivos estáticos (SPA).
     // Só arquivos de public/ (e public/fonts/, public/icons/); nada de "..".
     const rel = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
@@ -266,8 +346,9 @@ const server = http.createServer(async (req, res) => {
     send(res, 404, "não encontrado");
   } catch (err) {
     console.error(new Date().toISOString(), (err as Error).message);
-    send(res, 502, { error: (err as Error).message });
+    const st = err instanceof FireflyError ? (err.status === 401 ? 409 : err.status >= 500 ? 502 : 400) : 502;
+    send(res, st, { error: err instanceof FireflyError && err.status === 401 ? "O Firefly recusou o token salvo. Conecte de novo." : (err as Error).message });
   }
 });
 
-server.listen(PORT, "0.0.0.0", () => console.log(`relatórios em http://localhost:${PORT}`));
+server.listen(PORT, process.env.HOST ?? "0.0.0.0", () => console.log(`relatórios em http://localhost:${PORT}`));
