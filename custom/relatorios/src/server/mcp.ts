@@ -24,6 +24,7 @@ import { loadOverrides } from "./categories";
 import { quote } from "./quote";
 import { ownerDir } from "./users";
 import { registerFinanceTools } from "./mcp-fin";
+import { registerHealthTools } from "./mcp-saude";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
 const TOKEN = process.env.GHOSTFOLIO_ACCESS_TOKEN ?? "";
@@ -453,6 +454,7 @@ for (const t of TASKS.filter((x) => x.id !== "livre" && !x.needsPlan)) {
 }
 
 registerFinanceTools(server);
+registerHealthTools(server);
 
 return server;
 }

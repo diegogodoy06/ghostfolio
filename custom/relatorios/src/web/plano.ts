@@ -305,9 +305,11 @@ function planRow(it: PlanItem, e: PlanEval, groupSize: number, phase: Phase) {
     it.kind === "feito"
       ? `<button class="plan-check ${it.done ? "on" : ""}" aria-pressed="${!!it.done}" aria-label="${it.done ? "Desmarcar" : "Marcar como feita"}" title="${it.done ? "Desmarcar" : "Marcar como feita"}" ${phase === "futuro" ? "disabled" : ""}>✓</button>`
       : `<span class="plan-lead"><span class="ico" style="--icon: url(icons/${life ? (it.kind === "contagem" ? "analytics-outline" : "calendar-outline") : FIN_ICON[it.kind as FinanceKind]}.svg)"></span></span>`;
-  const quick = it.kind === "contagem" && phase !== "futuro" ? `<button class="plan-plus" data-count="1" title="Somar 1">+1</button>` : "";
+  const quick = it.kind === "contagem" && phase !== "futuro" && !it.auto ? `<button class="plan-plus" data-count="1" title="Somar 1">+1</button>` : "";
   const controls =
-    it.kind === "contagem" && phase !== "futuro"
+    it.auto === "academia"
+      ? `<p class="muted small" style="margin:0">Conta sozinha pelos dias marcados na aba Saúde.</p>`
+      : it.kind === "contagem" && phase !== "futuro"
       ? `<div class="plan-counter"><button class="icon" data-count="-1" aria-label="Desfazer o último">−</button><b>${e.current ?? 0}<span class="muted"> / ${it.value}</span></b><button class="primary" data-count="1">+1</button></div>`
       : it.kind === "mensal"
         ? `<div class="plan-months">${monthChips(it, phase)}</div>`

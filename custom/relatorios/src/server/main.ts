@@ -15,6 +15,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpServer } from "./mcp";
 import { sameToken, seal, sealForSync, unseal, userDir, userIdOf } from "./users";
 import { FIREFLY_PUBLIC_URL, FireflyError, type ImportRow, accounts as finAccounts, categoryNames, existing, monthlyTotals, ff, importRows, overview, parseStatement, readConfig, sealToken, tokenOf, writeConfig } from "./financas";
+import { WGER_PUBLIC_URL, WgerError, type WorkoutInput, deleteWeight, gymDays, readSaude, removeGymDay, saveWeight, saveWorkout, sealSaude, searchExercises, stravaActivities, stravaAuthUrl, stravaCallback, stravaForget, syncGymGoals, todaySP, weights, wg, wgerToken, writeSaude } from "./saude";
 import { type NewTx, cardBooks, createTx, deleteTx, forecast, monthTransactions, suggestPlanned, updateTx, validPlanned } from "./fin-plan";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
@@ -195,7 +196,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "PUT") {
         const body = await readBody(req, 100_000);
         if (!body || typeof body.years !== "object" || Array.isArray(body.years)) return send(res, 400, { error: "plano inválido" });
-        writeJson(file, { version: 1, years: body.years, updatedAt: new Date().toISOString() });
+        writeJson(file, { version: 1, years: body.years, ...(body.notes && typeof body.notes === "object" ? { notes: body.notes } : {}), updatedAt: new Date().toISOString() });
         return send(res, 200, { ok: true });
       }
     }
@@ -257,6 +258,113 @@ const server = http.createServer(async (req, res) => {
         if (fs.existsSync(file)) fs.unlinkSync(file);
         return send(res, 200, { ok: true });
       }
+    }
+    // Retorno da autorização da Strava: sem sessão (cookie Strict), validado pelo state do OAuth.
+    if (url.pathname === "/api/saude/strava/callback") {
+      let to = "/#saude";
+      try {
+        const code = url.searchParams.get("code");
+        if (url.searchParams.get("error") || !code) throw new Error("Autorização cancelada na Strava.");
+        await stravaCallback(url.searchParams.get("state") ?? "", code);
+      } catch (e) {
+        to = `/?stravaErro=${encodeURIComponent((e as Error).message)}#saude`;
+      }
+      res.writeHead(302, { location: to });
+      return void res.end();
+    }
+    // Saúde: peso, academia e treinos no wger; atividades da Strava só ao vivo (ver saude.ts).
+    if (url.pathname.startsWith("/api/saude") && s) {
+      const cfg = readSaude(s.dir);
+      const wtk = wgerToken(cfg);
+      const days = /^\d{4}-\d{2}-\d{2}$/;
+      if (url.pathname === "/api/saude" && req.method === "GET") {
+        return send(res, 200, { connected: !!wtk, publicUrl: WGER_PUBLIC_URL, strava: { configured: !!cfg.strava, connected: !!cfg.strava?.refresh, athlete: cfg.strava?.athlete ?? null } });
+      }
+      if (url.pathname === "/api/saude/token") {
+        if (req.method === "DELETE") {
+          delete cfg.token;
+          writeSaude(s.dir, cfg);
+          return send(res, 200, { ok: true });
+        }
+        if (req.method === "PUT") {
+          const { token } = (await readBody(req, 5_000)) as { token?: string };
+          if (!token || token.trim().length < 20) return send(res, 400, { error: "Token inválido." });
+          try {
+            await wg(token.trim(), "/weightentry/?limit=1");
+          } catch (e) {
+            return send(res, 400, { error: e instanceof WgerError && e.status === 401 ? "O wger recusou esta chave." : (e as Error).message });
+          }
+          writeSaude(s.dir, { ...cfg, token: sealSaude(token.trim()), connectedAt: new Date().toISOString() });
+          return send(res, 200, { ok: true });
+        }
+      }
+      // Strava: chaves do app, autorização e leitura ao vivo.
+      if (url.pathname === "/api/saude/strava" && req.method === "PUT") {
+        const { clientId, clientSecret } = (await readBody(req, 5_000)) as { clientId?: string; clientSecret?: string };
+        if (!/^\d+$/.test(String(clientId ?? "").trim()) || !clientSecret || clientSecret.trim().length < 20) return send(res, 400, { error: "Confira o Client ID e o Client Secret." });
+        writeSaude(s.dir, { ...cfg, strava: { clientId: String(clientId).trim(), clientSecret: sealSaude(clientSecret.trim()) } });
+        stravaForget(s.dir);
+        return send(res, 200, { ok: true });
+      }
+      if (url.pathname === "/api/saude/strava" && req.method === "DELETE") {
+        delete cfg.strava;
+        writeSaude(s.dir, cfg);
+        stravaForget(s.dir);
+        return send(res, 200, { ok: true });
+      }
+      if (url.pathname === "/api/saude/strava/auth") {
+        if (!cfg.strava) return send(res, 409, { error: "Informe antes as chaves do app da Strava." });
+        const proto = String(req.headers["x-forwarded-proto"] ?? "http").split(",")[0];
+        const host = String(req.headers["x-forwarded-host"] ?? req.headers.host);
+        res.writeHead(302, { location: stravaAuthUrl(s.dir, cfg, `${proto}://${host}/api/saude/strava/callback`) });
+        return void res.end();
+      }
+      if (url.pathname === "/api/saude/strava/atividades") {
+        if (!cfg.strava?.refresh) return send(res, 409, { error: "Strava não conectada." });
+        try {
+          return send(res, 200, await stravaActivities(s.dir, cfg, url.searchParams.get("refresh") === "1"));
+        } catch (e) {
+          return send(res, 502, { error: (e as Error).message });
+        }
+      }
+      if (!wtk) return send(res, 409, { error: "wger não conectado" });
+      try {
+        if (url.pathname === "/api/saude/peso") {
+          if (req.method === "GET") return send(res, 200, await weights(wtk));
+          if (req.method === "PUT") {
+            const b = (await readBody(req)) as { date?: string; kg?: number };
+            const kg = Number(b.kg);
+            if (!(kg > 20 && kg < 400)) return send(res, 400, { error: "Peso inválido." });
+            await saveWeight(wtk, days.test(b.date ?? "") ? b.date! : todaySP(), kg);
+            return send(res, 200, { ok: true });
+          }
+          if (req.method === "DELETE") {
+            await deleteWeight(wtk, url.searchParams.get("id") ?? "");
+            return send(res, 200, { ok: true });
+          }
+        }
+        if (url.pathname === "/api/saude/academia") {
+          if (req.method === "GET") return send(res, 200, await gymDays(wtk));
+          if (req.method === "PUT") {
+            const b = (await readBody(req, 50_000)) as WorkoutInput;
+            if (!days.test(b.date ?? "")) return send(res, 400, { error: "Data inválida." });
+            await saveWorkout(wtk, b);
+            syncGymGoals(s.dir, await gymDays(wtk));
+            return send(res, 200, { ok: true });
+          }
+          if (req.method === "DELETE") {
+            const d = url.searchParams.get("date") ?? "";
+            if (!days.test(d)) return send(res, 400, { error: "Data inválida." });
+            await removeGymDay(wtk, d);
+            syncGymGoals(s.dir, await gymDays(wtk));
+            return send(res, 200, { ok: true });
+          }
+        }
+        if (url.pathname === "/api/saude/exercicios") return send(res, 200, await searchExercises(wtk, url.searchParams.get("q") ?? ""));
+      } catch (e) {
+        return send(res, e instanceof WgerError && e.status < 500 ? 400 : 502, { error: (e as Error).message });
+      }
+      return send(res, 404, { error: "não encontrado" });
     }
     // Finanças (Firefly III): conexão, visão geral, cartões e importação de extratos.
     if (url.pathname.startsWith("/api/fin") && s) {

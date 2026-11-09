@@ -36,6 +36,8 @@ export interface PlanItem {
   log?: PlanLog[];
   /** Todo mês: meses cumpridos ("YYYY-MM"). */
   months?: string[];
+  /** Contagem automática: "academia" acompanha os dias marcados na aba Saúde. */
+  auto?: "academia";
   createdAt: string;
 }
 

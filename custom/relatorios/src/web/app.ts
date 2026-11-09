@@ -11,6 +11,7 @@ import { mountGoalsSummary, renderMetas } from "./metas";
 import { openExtratosModal } from "./extratos";
 import { clearFinCache, finView, mountFinSummary, renderFinancas, setFinView } from "./financas";
 import { mountPlanSummary } from "./plano";
+import { renderSaude } from "./saude";
 import { type HubData, type MainMode, clearHubCache, healthScore, hubFacts, hubSignals, kpisHtml, signalsHtml, loadHub, mainChart, mainChartHead, openScoreModal, runwayHtml } from "./hub";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
@@ -44,9 +45,9 @@ const BENCH = [
 ] as const;
 
 // ---------- estado ----------
-type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade" | "metas" | "financas";
-const TABS: Tab[] = ["resumo", "carteira", "proventos", "rentabilidade", "metas", "financas"];
-const TITLES: Record<Tab, string> = { resumo: "Resumo", carteira: "Carteira", proventos: "Proventos", rentabilidade: "Rentabilidade", metas: "Metas", financas: "Finanças" };
+type Tab = "resumo" | "carteira" | "proventos" | "rentabilidade" | "metas" | "financas" | "saude";
+const TABS: Tab[] = ["resumo", "carteira", "proventos", "rentabilidade", "metas", "financas", "saude"];
+const TITLES: Record<Tab, string> = { resumo: "Resumo", carteira: "Carteira", proventos: "Proventos", rentabilidade: "Rentabilidade", metas: "Metas", financas: "Finanças", saude: "Saúde" };
 /** Hash inicial; "#simulacao" (endereço antigo) abre a Carteira já no modo simulação. */
 function tabFromHash(): Tab {
   const h = location.hash.slice(1);
@@ -169,6 +170,10 @@ function pageMeta(r: Report | null) {
 
 /** Menu lateral: aba ativa e as vistas das Finanças abertas quando ela está ativa. */
 function syncSidebar() {
+  // Tudo/Carteira/Reserva só muda os investimentos: não aparece em Finanças e Saúde.
+  const notInvest = state.tab === "financas" || state.tab === "saude";
+  document.getElementById("scope")!.hidden = notInvest;
+  document.querySelector(".sb-switch")!.classList.toggle("off", notInvest);
   document.querySelectorAll<HTMLButtonElement>(".tabs button[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
   const sub = document.getElementById("fin-sub")!;
   sub.classList.toggle("open", state.tab === "financas");
@@ -200,7 +205,7 @@ function render(animate = true) {
       <p class="muted" style="margin:0">Com ela ligada, o Ghostfolio esconde quantidades e valores em tudo que entrega pela API, então os relatórios ficam zerados e a sincronização automática fica pausada. Desligue em <a href="${GHOSTFOLIO}account">Ghostfolio → Minha conta</a> e use o botão do olho aqui em cima para ocultar os valores nos relatórios.</p></div>`;
     return;
   }
-  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade, metas: (x: Report) => void renderMetas(x, main, charts), financas: (x: Report) => void renderFinancas(x, main, charts) })[state.tab](r);
+  ({ resumo: renderResumo, carteira: renderCarteira, proventos: renderProventos, rentabilidade: renderRentabilidade, metas: (x: Report) => void renderMetas(x, main, charts), financas: (x: Report) => void renderFinancas(x, main, charts), saude: () => void renderSaude(main, charts) })[state.tab](r);
   if (animate) {
     void main.offsetWidth; // reinicia a animação de entrada
     main.classList.add("enter");

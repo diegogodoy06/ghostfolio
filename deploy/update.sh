@@ -15,5 +15,10 @@ if [ -f deploy/firefly/.env ]; then
   docker compose --project-directory deploy/firefly -f deploy/firefly/compose.yml pull --quiet
   docker compose --project-directory deploy/firefly -f deploy/firefly/compose.yml up -d --remove-orphans
 fi
+# wger (peso, academia e treinos), se instalado com deploy/wger/setup.sh
+if [ -f deploy/wger/.env ]; then
+  docker compose --project-directory deploy/wger -f deploy/wger/compose.yml pull --quiet
+  docker compose --project-directory deploy/wger -f deploy/wger/compose.yml up -d --remove-orphans
+fi
 docker image prune -f >/dev/null
 echo "$(date -u +%FT%TZ) atualização ok: $(git log --oneline -1)"

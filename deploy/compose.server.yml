@@ -8,6 +8,8 @@ services:
       PUBLIC_GHOSTFOLIO_URL: https://${GF_DOMAIN:?defina GF_DOMAIN no .env}
       # Aba Finanças: Firefly III (deploy/firefly) pela porta publicada no próprio host.
       FIREFLY_URL: http://host.docker.internal:3335
+      WGER_URL: http://host.docker.internal:3336
+      WGER_PUBLIC_URL: http://${WG_LAN_HOST:-192.168.1.251}:3336
       FIREFLY_PUBLIC_URL: https://${FF_DOMAIN:-financas.fourwebs.com.br}
     extra_hosts:
       - "host.docker.internal:host-gateway"
