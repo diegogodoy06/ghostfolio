@@ -5,7 +5,7 @@
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { gymDays, readSaude, removeGymDay, saveWeight, saveWorkout, searchExercises, syncGymGoals, todaySP, weights, wgerToken } from "./saude";
+import { currentRoutine, findDay, gymDays, nextDay, readSaude, removeGymDay, saveWeight, saveWorkout, searchExercises, syncGymGoals, todaySP, weights, wgerToken } from "./saude";
 import { ownerDir } from "./users";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -65,15 +65,38 @@ export function registerHealthTools(server: McpServer) {
   tool("saude_academia", "Dias de academia", "Dias marcados e treinos registrados em um período (exercícios, séries, repetições e carga).", { desde: ymd.optional(), ate: ymd.optional() }, async ({ desde, ate }) => {
     const { token } = await ctx();
     const g = (await gymDays(token)).filter((d) => (!desde || d.date >= desde) && (!ate || d.date <= ate));
-    return `${g.length} dias\n` + g.map((d) => `${d.date}${d.notes ? ` | ${d.notes}` : ""}${d.sets.length ? ` | ${[...new Set(d.sets.map((s) => s.name))].map((n) => `${n}: ${d.sets.filter((s) => s.name === n).map((s) => `${s.reps ?? "–"}×${s.kg ?? "–"}kg`).join(", ")}`).join("; ")}` : ""}`).join("\n");
+    return `${g.length} dias\n` + g.map((d) => `${d.date}${d.treino ? ` | ${d.treino}` : ""}${d.notes ? ` | ${d.notes}` : ""}${d.sets.length ? ` | ${[...new Set(d.sets.map((s) => s.name))].map((n) => `${n}: ${d.sets.filter((s) => s.name === n).map((s) => `${s.reps ?? "–"}×${s.kg ?? "–"}kg`).join(", ")}`).join("; ")}` : ""}`).join("\n");
   });
 
-  tool("saude_marcar_academia", "Marcar academia", "Marca um dia de academia. As metas ligadas à academia sobem sozinhas.", { data: ymd.optional().describe("padrão: hoje"), notas: z.string().optional() }, async ({ data, notas }) => {
+  tool("saude_treinos", "Treinos da rotina", "Os treinos da rotina (A, B, C…) com os exercícios na ordem e os ids, o próximo treino da sequência e a última carga de cada exercício.", {}, async () => {
+    const { token } = await ctx();
+    const [r, g] = await Promise.all([currentRoutine(token), gymDays(token)]);
+    if (!r) return "Nenhuma rotina cadastrada no wger.";
+    const lastOf = (ex: number) => {
+      const d = [...g].reverse().find((x) => x.sets.some((s) => s.exercise === ex));
+      if (!d) return "";
+      const sets = d.sets.filter((s) => s.exercise === ex);
+      return ` · última vez ${d.date}: ${sets.length}× ${sets[0]!.reps ?? "–"} reps, ${sets[0]!.kg ?? "–"} kg`;
+    };
+    const lastDone = (id: number) => [...g].reverse().find((x) => x.day === id)?.date;
+    const nx = nextDay(r, g);
+    return [`# ${r.name} (válida até ${r.end}, renova sozinha)`, `Próximo da sequência: ${nx?.name ?? "—"}`, ...r.days.flatMap((d) => [``, `## ${d.name} · id ${d.id}${lastDone(d.id) ? ` · feito por último em ${lastDone(d.id)}` : ""}`, ...d.exercises.map((e) => `- ${e.name} (exercício ${e.exercise})${lastOf(e.exercise)}`)])].join("\n");
+  });
+
+  const dayOf = async (token: string, treino?: string) => {
+    if (!treino) return null;
+    const r = await currentRoutine(token);
+    const d = r && findDay(r, treino);
+    if (!d) throw new Error(`Treino "${treino}" não existe na rotina. Veja saude_treinos.`);
+    return d.id;
+  };
+
+  tool("saude_marcar_academia", "Marcar academia", "Marca um dia de academia, opcionalmente com o treino feito (A, B, C…). As metas ligadas à academia sobem sozinhas.", { data: ymd.optional().describe("padrão: hoje"), treino: z.string().optional().describe("ex.: A ou Treino A"), notas: z.string().optional() }, async ({ data, treino, notas }) => {
     const { token, dir } = await ctx();
     const date = data ?? todaySP();
-    await saveWorkout(token, { date, notes: notas });
+    await saveWorkout(token, { date, notes: notas, day: await dayOf(token, treino) });
     syncGymGoals(dir, await gymDays(token));
-    return `Academia marcada em ${date}.`;
+    return `Academia marcada em ${date}${treino ? ` (${treino})` : ""}.`;
   });
 
   tool("saude_desmarcar_academia", "Desmarcar academia", "Remove o dia de academia e os exercícios registrados nele. Só depois de o usuário confirmar.", { data: ymd, confirmado: z.literal(true) }, async ({ data }) => {
@@ -91,12 +114,12 @@ export function registerHealthTools(server: McpServer) {
   tool(
     "saude_registrar_treino",
     "Registrar treino",
-    "Marca o dia e registra os exercícios (ids de saude_exercicios) com séries, repetições e carga.",
-    { data: ymd.optional(), notas: z.string().optional(), exercicios: z.array(z.object({ id: z.number().int(), series: z.number().int().min(1).max(30), reps: z.number().optional(), kg: z.number().optional() })).min(1).max(30) },
-    async ({ data, notas, exercicios }) => {
+    "Marca o dia e registra os exercícios (ids de saude_treinos ou saude_exercicios) com séries, repetições e carga.",
+    { data: ymd.optional(), treino: z.string().optional().describe("ex.: A ou Treino A"), notas: z.string().optional(), exercicios: z.array(z.object({ id: z.number().int(), series: z.number().int().min(1).max(30), reps: z.number().optional(), kg: z.number().optional() })).min(1).max(30) },
+    async ({ data, treino, notas, exercicios }) => {
       const { token, dir } = await ctx();
       const date = data ?? todaySP();
-      await saveWorkout(token, { date, notes: notas, exercises: exercicios.map((e: any) => ({ exercise: e.id, sets: e.series, reps: e.reps ?? null, kg: e.kg ?? null })) });
+      await saveWorkout(token, { date, notes: notas, day: await dayOf(token, treino), exercises: exercicios.map((e: any) => ({ exercise: e.id, sets: e.series, reps: e.reps ?? null, kg: e.kg ?? null })) });
       syncGymGoals(dir, await gymDays(token));
       return `Treino de ${date} salvo: ${exercicios.length} exercícios.`;
     },

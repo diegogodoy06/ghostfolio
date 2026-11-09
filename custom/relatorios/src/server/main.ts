@@ -15,7 +15,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpServer } from "./mcp";
 import { sameToken, seal, sealForSync, unseal, userDir, userIdOf } from "./users";
 import { FIREFLY_PUBLIC_URL, FireflyError, type ImportRow, accounts as finAccounts, categoryNames, existing, monthlyTotals, ff, importRows, overview, parseStatement, readConfig, sealToken, tokenOf, writeConfig } from "./financas";
-import { WGER_PUBLIC_URL, WgerError, type WorkoutInput, deleteWeight, gymDays, readSaude, removeGymDay, saveWeight, saveWorkout, sealSaude, searchExercises, stravaActivities, stravaAuthUrl, stravaCallback, stravaForget, syncGymGoals, todaySP, weights, wg, wgerToken, writeSaude } from "./saude";
+import { WGER_PUBLIC_URL, WgerError, type WorkoutInput, currentRoutine, deleteWeight, gymDays, readSaude, removeGymDay, saveWeight, saveWorkout, sealSaude, searchExercises, stravaActivities, stravaAuthUrl, stravaCallback, stravaForget, syncGymGoals, todaySP, weights, wg, wgerToken, writeSaude } from "./saude";
 import { type NewTx, cardBooks, createTx, deleteTx, forecast, monthTransactions, suggestPlanned, updateTx, validPlanned } from "./fin-plan";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
@@ -151,6 +151,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/logout" && req.method === "POST") {
       return send(res, 200, { ok: true }, { "set-cookie": "rel_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict" });
     }
+    // Retorno da autorização da Strava: sem sessão (cookie Strict), validado pelo state do OAuth.
+    if (url.pathname === "/api/saude/strava/callback") {
+      let to = "/#saude";
+      try {
+        const code = url.searchParams.get("code");
+        if (url.searchParams.get("error") || !code) throw new Error("Autorização cancelada na Strava.");
+        await stravaCallback(url.searchParams.get("state") ?? "", code);
+      } catch (e) {
+        to = `/?stravaErro=${encodeURIComponent((e as Error).message)}#saude`;
+      }
+      res.writeHead(302, { location: to });
+      return void res.end();
+    }
     const s = url.pathname.startsWith("/api/") ? await session(req) : null;
     if (url.pathname.startsWith("/api/") && !s) return send(res, 401, { error: "login" });
     if (url.pathname === "/api/report" && s) {
@@ -259,19 +272,6 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true });
       }
     }
-    // Retorno da autorização da Strava: sem sessão (cookie Strict), validado pelo state do OAuth.
-    if (url.pathname === "/api/saude/strava/callback") {
-      let to = "/#saude";
-      try {
-        const code = url.searchParams.get("code");
-        if (url.searchParams.get("error") || !code) throw new Error("Autorização cancelada na Strava.");
-        await stravaCallback(url.searchParams.get("state") ?? "", code);
-      } catch (e) {
-        to = `/?stravaErro=${encodeURIComponent((e as Error).message)}#saude`;
-      }
-      res.writeHead(302, { location: to });
-      return void res.end();
-    }
     // Saúde: peso, academia e treinos no wger; atividades da Strava só ao vivo (ver saude.ts).
     if (url.pathname.startsWith("/api/saude") && s) {
       const cfg = readSaude(s.dir);
@@ -348,6 +348,7 @@ const server = http.createServer(async (req, res) => {
           if (req.method === "PUT") {
             const b = (await readBody(req, 50_000)) as WorkoutInput;
             if (!days.test(b.date ?? "")) return send(res, 400, { error: "Data inválida." });
+            b.day = Number.isInteger(b.day) && Number(b.day) > 0 ? Number(b.day) : null;
             await saveWorkout(wtk, b);
             syncGymGoals(s.dir, await gymDays(wtk));
             return send(res, 200, { ok: true });
@@ -361,6 +362,7 @@ const server = http.createServer(async (req, res) => {
           }
         }
         if (url.pathname === "/api/saude/exercicios") return send(res, 200, await searchExercises(wtk, url.searchParams.get("q") ?? ""));
+        if (url.pathname === "/api/saude/treinos") return send(res, 200, await currentRoutine(wtk));
       } catch (e) {
         return send(res, e instanceof WgerError && e.status < 500 ? 400 : 502, { error: (e as Error).message });
       }

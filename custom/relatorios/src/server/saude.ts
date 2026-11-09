@@ -110,24 +110,109 @@ export interface GymDay {
   id: string;
   date: string;
   notes: string;
+  /** Dia da rotina (Treino A, B…) feito nesta data, se escolhido. */
+  day: number | null;
+  treino: string | null;
   sets: GymSet[];
 }
 export async function gymDays(token: string): Promise<GymDay[]> {
-  const [sessions, logs, names] = await Promise.all([wgAll(token, "/workoutsession/?ordering=datetime_start"), wgAll(token, "/workoutlog/"), exerciseIndex(token)]);
+  const [sessions, logs, names, days, labels] = await Promise.all([wgAll(token, "/workoutsession/?ordering=datetime_start"), wgAll(token, "/workoutlog/"), exerciseIndex(token), wgAll(token, "/day/"), myExerciseNames(token)]);
+  const dayName = new Map(days.map((d) => [Number(d.id), String(d.name)]));
   const bySession = new Map<string, GymSet[]>();
   for (const l of logs) {
     if (!l.session) continue;
     const key = String(l.session);
-    bySession.set(key, [...(bySession.get(key) ?? []), { exercise: l.exercise, name: names.byId.get(l.exercise) ?? `Exercício ${l.exercise}`, reps: l.repetitions == null ? null : Number(l.repetitions), kg: l.weight == null ? null : Number(l.weight) }]);
+    bySession.set(key, [...(bySession.get(key) ?? []), { exercise: l.exercise, name: labels.get(l.exercise) ?? names.byId.get(l.exercise) ?? `Exercício ${l.exercise}`, reps: l.repetitions == null ? null : Number(l.repetitions), kg: l.weight == null ? null : Number(l.weight) }]);
   }
   return sessions
     .filter((s) => s.datetime_start)
-    .map((s) => ({ id: String(s.id), date: String(s.datetime_start).slice(0, 10), notes: s.notes ?? "", sets: bySession.get(String(s.id)) ?? [] }));
+    .map((s) => ({ id: String(s.id), date: String(s.datetime_start).slice(0, 10), notes: s.notes ?? "", day: s.day == null ? null : Number(s.day), treino: s.day == null ? null : (dayName.get(Number(s.day)) ?? null), sets: bySession.get(String(s.id)) ?? [] }));
+}
+
+/** Nomes que o usuário deu aos exercícios na rotina (ex.: "Rosca scott"), no lugar do nome do catálogo. */
+async function myExerciseNames(token: string) {
+  const [slots, entries] = await Promise.all([wgAll(token, "/slot/"), wgAll(token, "/slot-entry/")]);
+  const slotComment = new Map(slots.map((s) => [Number(s.id), String(s.comment ?? "")]));
+  const out = new Map<number, string>();
+  for (const e of entries) {
+    const label = String(e.comment || slotComment.get(Number(e.slot)) || "").trim();
+    if (label && !out.has(Number(e.exercise))) out.set(Number(e.exercise), label);
+  }
+  return out;
+}
+
+// ---------- rotina (Treino A, B, C…) ----------
+
+export interface RoutineDay {
+  id: number;
+  name: string;
+  exercises: { exercise: number; name: string }[];
+}
+export interface Routine {
+  id: number;
+  name: string;
+  end: string;
+  days: RoutineDay[];
+}
+const plusDays = (d: string, n: number) => new Date(new Date(`${d}T12:00:00Z`).getTime() + n * 86_400_000).toISOString().slice(0, 10);
+/**
+ * Rotina em uso, com os treinos e exercícios na ordem. O wger limita uma rotina a 120 dias: quando
+ * faltam menos de 30, ela é renovada sozinha (começa hoje e vai por mais 119 dias), sem perder nada.
+ */
+export async function currentRoutine(token: string): Promise<Routine | null> {
+  const today = todaySP();
+  const all = (await wgAll(token, "/routine/")).filter((r) => !r.is_template);
+  if (!all.length) return null;
+  all.sort((a, b) => String(b.end).localeCompare(String(a.end)));
+  const r = all.find((x) => String(x.start) <= today && String(x.end) >= today) ?? all[0];
+  let end = String(r.end);
+  if (end < plusDays(today, 30)) {
+    end = plusDays(today, 119);
+    await wg(token, `/routine/${r.id}/`, { method: "PATCH", body: { start: today, end } });
+  }
+  const [days, slots, entries, names] = await Promise.all([wgAll(token, `/day/?routine=${r.id}`), wgAll(token, "/slot/"), wgAll(token, "/slot-entry/"), exerciseIndex(token)]);
+  const ord = (a: any, b: any) => Number(a.order) - Number(b.order) || Number(a.id) - Number(b.id);
+  return {
+    id: Number(r.id),
+    name: String(r.name),
+    end,
+    days: days
+      .filter((d) => !d.is_rest)
+      .sort(ord)
+      .map((d) => ({
+        id: Number(d.id),
+        name: String(d.name),
+        exercises: slots
+          .filter((s) => Number(s.day) === Number(d.id))
+          .sort(ord)
+          .flatMap((s) =>
+            entries
+              .filter((e) => Number(e.slot) === Number(s.id))
+              .sort(ord)
+              .map((e) => ({ exercise: Number(e.exercise), name: String(e.comment || s.comment || names.byId.get(Number(e.exercise)) || `Exercício ${e.exercise}`) })),
+          ),
+      })),
+  };
+}
+/** Próximo treino da sequência: o seguinte ao último feito (depois do último, volta ao primeiro). */
+export function nextDay(r: Routine, gym: GymDay[]): RoutineDay | null {
+  if (!r.days.length) return null;
+  const last = [...gym].reverse().find((g) => g.day != null && r.days.some((d) => d.id === g.day));
+  if (!last) return r.days[0]!;
+  const i = r.days.findIndex((d) => d.id === last.day);
+  return r.days[(i + 1) % r.days.length]!;
+}
+/** Acha um treino pelo nome ou pela letra ("C", "treino c"). */
+export function findDay(r: Routine, q: string): RoutineDay | null {
+  const n = norm(q).replace(/^treino\s+/, "");
+  return r.days.find((d) => norm(d.name) === norm(q) || norm(d.name).replace(/^treino\s+/, "") === n) ?? null;
 }
 
 export interface WorkoutInput {
   date: string;
   notes?: string;
+  /** Dia da rotina (Treino A, B…), opcional. */
+  day?: number | null;
   exercises?: { exercise: number; sets: number; reps?: number | null; kg?: number | null }[];
 }
 /** Marca o dia e, se vierem exercícios, registra as séries. Um dia já marcado recebe o que vier. */
@@ -136,9 +221,12 @@ export async function saveWorkout(token: string, w: WorkoutInput) {
   let id: string;
   if (same) {
     id = String(same.id);
-    if (w.notes) await wg(token, `/workoutsession/${id}/`, { method: "PATCH", body: { notes: same.notes ? `${same.notes}\n${w.notes}` : w.notes } });
+    const patch: Record<string, unknown> = {};
+    if (w.notes) patch.notes = same.notes ? `${same.notes}\n${w.notes}` : w.notes;
+    if (w.day && w.day !== same.day) Object.assign(patch, await dayRef(token, w.day));
+    if (Object.keys(patch).length) await wg(token, `/workoutsession/${id}/`, { method: "PATCH", body: patch });
   } else {
-    id = String((await wg(token, "/workoutsession/", { method: "POST", body: { datetime_start: at(w.date, "18:00"), notes: w.notes ?? "" } })).id);
+    id = String((await wg(token, "/workoutsession/", { method: "POST", body: { datetime_start: at(w.date, "18:00"), notes: w.notes ?? "", ...(w.day ? await dayRef(token, w.day) : {}) } })).id);
   }
   for (const e of w.exercises ?? []) {
     for (let k = 0; k < Math.min(30, Math.max(1, e.sets)); k++) {
@@ -146,6 +234,10 @@ export async function saveWorkout(token: string, w: WorkoutInput) {
     }
   }
   return id;
+}
+async function dayRef(token: string, day: number) {
+  const d = await wg(token, `/day/${day}/`);
+  return { day: Number(d.id), routine: Number(d.routine) };
 }
 export async function removeGymDay(token: string, date: string) {
   const days = (await wgAll(token, "/workoutsession/?ordering=datetime_start")).filter((s) => String(s.datetime_start ?? "").slice(0, 10) === date);

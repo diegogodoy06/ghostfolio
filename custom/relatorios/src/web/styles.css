@@ -1294,6 +1294,36 @@ details.sa-more > summary { cursor: pointer; color: var(--ink-2); font-size: 13p
 .sa-act a { color: #fc5200; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .strava-connect { display: inline-block; background: #fc5200; color: #fff; font-weight: 600; font-size: 14px; padding: 11px 18px; border-radius: 6px; text-decoration: none; }
 .strava-mark { color: var(--muted); }
+.cal-tr { position: absolute; top: 3px; right: 5px; font-style: normal; font-size: 9.5px; font-weight: 800; line-height: 1; opacity: 0.75; }
+.cal-day.has .cal-tr { opacity: 1; }
+.tr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-top: 14px; }
+.tr-card { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--card-2); color: var(--ink); text-align: left; cursor: pointer; transition: background 0.2s, border-color 0.2s, transform 0.12s; }
+.tr-card:hover { background: var(--card-3); border-color: var(--line-2); }
+.tr-card:active { transform: scale(0.98); }
+.tr-card.next { border-color: var(--accent); }
+.tr-l { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--card-3); font-size: 18px; font-weight: 800; }
+.tr-card.next .tr-l { background: var(--accent); color: var(--on-accent); }
+.tr-t { display: grid; gap: 2px; min-width: 0; }
+.tr-t b { font-weight: 600; }
+.tr-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; padding-top: 6px; }
+.tr-list ol { margin: 6px 0 0; padding-left: 20px; color: var(--ink-2); font-size: 13px; line-height: 1.7; }
+.tr-seg { margin-bottom: 14px; }
+.tr-hint { margin: 4px 0 10px; }
+.tr-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 64px 76px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.tr-row > input { height: 40px; width: 100%; min-width: 0; text-align: center; }
+.tr-head { padding: 0 0 4px; font-size: 11.5px; color: var(--ink-3, var(--ink-2)); text-align: center; }
+.tr-row.off > input, .tr-row.off .tr-name span, .tr-row.done { opacity: 0.45; }
+.tr-name { display: flex; align-items: center; gap: 10px; cursor: pointer; min-width: 0; align-self: center; }
+.tr-name input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.tr-name span { display: grid; gap: 1px; font-size: 14px; }
+.tr-name small { font-size: 11.5px; }
+.link-btn { background: none; border: 0; padding: 10px 0; color: var(--ink-2); cursor: pointer; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 640px) {
+  .tr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tr-card { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .tr-row { grid-template-columns: minmax(0, 1fr) 48px 48px 58px; gap: 6px; }
+  .tr-row > input { height: 38px; padding: 0 4px; }
+}
 .sa-ex { display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .sa-ex b { font-weight: 500; }
 .wk-row { display: grid; grid-template-columns: minmax(0, 1fr) 70px 70px 80px 36px; gap: 8px; align-items: end; margin-bottom: 10px; }

@@ -12,7 +12,20 @@ interface GymDay {
   id: string;
   date: string;
   notes: string;
+  day: number | null;
+  treino: string | null;
   sets: { exercise: number; name: string; reps: number | null; kg: number | null }[];
+}
+interface RoutineDay {
+  id: number;
+  name: string;
+  exercises: { exercise: number; name: string }[];
+}
+interface Routine {
+  id: number;
+  name: string;
+  end: string;
+  days: RoutineDay[];
 }
 interface Activity {
   id: number;
@@ -41,6 +54,30 @@ const addDays = (d: string, n: number) => new Date(new Date(`${d}T12:00:00Z`).ge
 const weekStart = (d: string) => addDays(d, -new Date(`${d}T12:00:00Z`).getUTCDay());
 
 let calMonth = thisMonth();
+let routine: Routine | null = null;
+let gymAll: GymDay[] = [];
+/** "Treino A" → "A"; nomes livres ficam com a primeira letra. */
+const letter = (name: string) => {
+  const m = /^treino\s+(\S{1,3})$/i.exec(name.trim());
+  return (m ? m[1]! : name.trim().charAt(0)).toUpperCase();
+};
+/** Próximo da sequência: o seguinte ao último treino feito. */
+function nextDay(r: Routine, gym: GymDay[]) {
+  const last = [...gym].reverse().find((g) => g.day != null && r.days.some((d) => d.id === g.day));
+  if (!last) return r.days[0] ?? null;
+  return r.days[(r.days.findIndex((d) => d.id === last.day) + 1) % r.days.length] ?? null;
+}
+/** Última vez que o exercício foi registrado: séries, reps e carga para pré-preencher. */
+function lastOf(ex: number, gym: GymDay[], before = "9999") {
+  const d = [...gym].reverse().find((g) => g.date < before && g.sets.some((x) => x.exercise === ex));
+  if (!d) return null;
+  const sets = d.sets.filter((x) => x.exercise === ex);
+  return { date: d.date, sets: sets.length, reps: sets.at(-1)!.reps, kg: sets.at(-1)!.kg };
+}
+const ago = (d: string) => {
+  const n = Math.round((new Date(`${todayIso()}T12:00:00Z`).getTime() - new Date(`${d}T12:00:00Z`).getTime()) / 86_400_000);
+  return n === 0 ? "hoje" : n === 1 ? "ontem" : `há ${n} dias`;
+};
 let rerender: () => void = () => {};
 
 export async function renderSaude(main: HTMLElement, charts: Chart[]) {
@@ -70,7 +107,8 @@ export async function renderSaude(main: HTMLElement, charts: Chart[]) {
   let weights: Weight[];
   let gym: GymDay[];
   try {
-    [weights, gym] = await Promise.all([api<Weight[]>("/api/saude/peso"), api<GymDay[]>("/api/saude/academia")]);
+    [weights, gym, routine] = await Promise.all([api<Weight[]>("/api/saude/peso"), api<GymDay[]>("/api/saude/academia"), api<Routine | null>("/api/saude/treinos").catch(() => null)]);
+    gymAll = gym;
   } catch (e) {
     main.innerHTML = `<div class="card"><p class="error">Não foi possível ler o wger: ${esc((e as Error).message)}</p></div>`;
     return;
@@ -94,13 +132,16 @@ export async function renderSaude(main: HTMLElement, charts: Chart[]) {
       <div class="card kpi"><div class="label">Academia em ${today.slice(0, 4)}</div><div class="value">${thisY}<small> dias</small></div><span class="sub">registrados aqui</span></div>
       <div class="card kpi" id="sa-kpi-strava"><div class="label">Strava na semana</div><div class="value">—</div><span class="sub">${st.strava.connected ? "carregando" : "não conectada"}</span></div>
     </section>
+    ${routine?.days.length ? `<section class="card" id="sa-treinos"></section>` : ""}
     <section class="split">
       <div class="card" id="sa-cal"></div>
       <div class="card" id="sa-peso"></div>
     </section>
     <section class="card" id="sa-strava"></section>`;
 
-  main.querySelector("#sa-workout")!.addEventListener("click", () => openWorkout(todayIso()));
+  main.querySelector("#sa-workout")!.addEventListener("click", () => (routine?.days.length ? openTreino(nextDay(routine, gym)!.id, todayIso()) : openWorkout(todayIso())));
+  const tr = main.querySelector<HTMLElement>("#sa-treinos");
+  if (tr && routine) drawRoutine(tr, routine, gym);
   main.querySelector("#sa-weight")!.addEventListener("click", () => openWeight(weights));
   main.querySelector("#sa-settings")!.addEventListener("click", () => openSettings(st));
   drawCalendar(main.querySelector<HTMLElement>("#sa-cal")!, gym);
@@ -122,7 +163,7 @@ function drawCalendar(el: HTMLElement, gym: GymDay[]) {
     const iso = `${calMonth}-${String(d).padStart(2, "0")}`;
     const it = byDate.get(iso);
     const future = iso > today;
-    cells.push(`<button class="cal-day ${it ? "on" : ""} ${iso === today ? "now" : ""} ${it && (it.sets.length || it.notes) ? "has" : ""}" data-d="${iso}" aria-pressed="${!!it}" ${future ? "disabled" : ""} aria-label="${d} de ${MONTHS[m - 1]}">${d}</button>`);
+    cells.push(`<button class="cal-day ${it ? "on" : ""} ${iso === today ? "now" : ""} ${it && (it.sets.length || it.notes) ? "has" : ""}" data-d="${iso}" aria-pressed="${!!it}" ${future ? "disabled" : ""} aria-label="${d} de ${MONTHS[m - 1]}${it?.treino ? `, ${esc(it.treino)}` : ""}">${d}${it?.treino ? `<i class="cal-tr">${esc(letter(it.treino))}</i>` : ""}</button>`);
   }
   el.innerHTML = `
     <div class="row-between"><h2 style="margin:0">Academia</h2>
@@ -139,7 +180,7 @@ function drawCalendar(el: HTMLElement, gym: GymDay[]) {
     b.addEventListener("click", async () => {
       const date = b.dataset.d!;
       const it = byDate.get(date);
-      if (it && (it.sets.length || it.notes)) return openDay(it);
+      if (it && (it.sets.length || it.notes || it.day)) return openDay(it);
       b.disabled = true;
       try {
         if (it) await api(`/api/saude/academia?date=${date}`, { method: "DELETE" });
@@ -157,14 +198,15 @@ function openDay(d: GymDay) {
   const groups = new Map<string, GymDay["sets"]>();
   for (const s of d.sets) groups.set(s.name, [...(groups.get(s.name) ?? []), s]);
   const m = openModal(
-    `Treino de ${dayBR(d.date)}`,
+    `${d.treino ? `${esc(d.treino)} · ` : "Treino de "}${dayBR(d.date)}`,
     `${d.notes ? `<p class="muted" style="margin-top:0">${esc(d.notes)}</p>` : ""}
      ${[...groups].map(([n, sets]) => `<div class="sa-ex"><b>${esc(n)}</b><span class="muted small">${sets.map((s) => `${s.reps ?? "–"}×${s.kg ?? "–"}kg`).join(" · ")}</span></div>`).join("") || `<p class="muted small">Sem exercícios registrados.</p>`}
      <div class="modal-actions"><button class="ghost danger" id="sd-del">Desmarcar o dia</button><button class="primary" id="sd-add">Adicionar exercícios</button></div>`,
   );
   m.el.querySelector("#sd-add")!.addEventListener("click", () => {
     m.close();
-    openWorkout(d.date);
+    if (routine?.days.length) openTreino(d.day && routine.days.some((x) => x.id === d.day) ? d.day : nextDay(routine, gymAll)!.id, d.date);
+    else openWorkout(d.date);
   });
   m.el.querySelector("#sd-del")!.addEventListener("click", async () => {
     if (!confirm(`Desmarcar ${dayBR(d.date)}? Os exercícios deste dia também serão apagados.`)) return;
@@ -172,6 +214,107 @@ function openDay(d: GymDay) {
     m.close();
     rerender();
   });
+}
+
+// ---------- treinos da rotina (A, B, C…) ----------
+
+function drawRoutine(el: HTMLElement, r: Routine, gym: GymDay[]) {
+  const nx = nextDay(r, gym);
+  const lastDone = (id: number) => [...gym].reverse().find((g) => g.day === id)?.date;
+  el.innerHTML = `
+    <div class="row-between"><h2 style="margin:0">Treinos</h2>${nx ? `<span class="tag">Próximo: ${esc(nx.name)}</span>` : ""}</div>
+    <div class="tr-grid">${r.days
+      .map((d) => {
+        const ld = lastDone(d.id);
+        return `<button class="tr-card ${nx?.id === d.id ? "next" : ""}" data-tr="${d.id}"><span class="tr-l">${esc(letter(d.name))}</span><span class="tr-t"><b>${esc(d.name)}</b><span class="muted small">${d.exercises.length} exercícios · ${ld ? ago(ld) : "ainda não feito"}</span></span></button>`;
+      })
+      .join("")}</div>
+    <details class="sa-more"><summary>Ver os exercícios</summary><div class="tr-list">${r.days
+      .map((d) => `<div><b>${esc(d.name)}</b><ol>${d.exercises.map((e) => `<li>${esc(e.name)}</li>`).join("")}</ol></div>`)
+      .join("")}</div></details>`;
+  el.querySelectorAll<HTMLButtonElement>("[data-tr]").forEach((b) => b.addEventListener("click", () => openTreino(Number(b.dataset.tr), todayIso())));
+}
+
+function openTreino(dayId: number, date: string) {
+  const r = routine!;
+  const m = openModal(
+    "Registrar treino",
+    `<div class="toggle seg tr-seg">${r.days.map((d) => `<button type="button" data-tr="${d.id}">${esc(d.name)}</button>`).join("")}</div>
+     <div class="fin-form">
+       <label class="field">Data<input id="tr-date" type="date" value="${date}" max="${todayIso()}" /></label>
+       <label class="field">Observações<input id="tr-notes" maxlength="300" placeholder="Opcional" /></label>
+     </div>
+     <p class="muted small tr-hint">Séries, reps e carga vêm da última vez. Desmarque o que não fez; exercício sem reps nem carga não é registrado.</p>
+     <div id="tr-rows"></div>
+     <button class="link-btn" id="tr-free" type="button">+ Exercício fora do treino</button>
+     <p class="error small form-err" hidden></p>
+     <div class="modal-actions"><button class="ghost" id="tr-mark">Só marcar o dia</button><button class="primary" id="tr-save">Salvar treino</button></div>`,
+    { wide: true },
+  );
+  const box = m.el.querySelector<HTMLElement>("#tr-rows")!;
+  const dateIn = m.el.querySelector<HTMLInputElement>("#tr-date")!;
+  let current = dayId;
+  const fill = () => {
+    const d = r.days.find((x) => x.id === current)!;
+    m.el.querySelectorAll<HTMLButtonElement>("[data-tr]").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.tr) === current)));
+    const done = new Set(gymAll.find((g) => g.date === dateIn.value)?.sets.map((x) => x.exercise) ?? []);
+    box.innerHTML = `<div class="tr-row tr-head"><span></span><span>Séries</span><span>Reps</span><span>Kg</span></div>` + d.exercises
+      .map((e) => {
+        const l = lastOf(e.exercise, gymAll, dateIn.value);
+        const num = (v: number | null | undefined) => (v == null ? "" : String(v).replace(".", ","));
+        return `<div class="tr-row ${done.has(e.exercise) ? "done" : ""}" data-ex="${e.exercise}">
+          <label class="tr-name"><input type="checkbox" ${done.has(e.exercise) ? "disabled" : "checked"} /><span>${esc(e.name)}<small class="muted">${done.has(e.exercise) ? "já registrado neste dia" : l ? `última: ${dayBR(l.date)}` : "primeira vez"}</small></span></label>
+          <input aria-label="Séries" class="tr-s" type="number" min="1" max="30" value="${l?.sets ?? 3}" ${done.has(e.exercise) ? "disabled" : ""} />
+          <input aria-label="Repetições" class="tr-r" type="number" min="0" max="500" value="${num(l?.reps)}" placeholder="—" ${done.has(e.exercise) ? "disabled" : ""} />
+          <input aria-label="Carga em kg" class="tr-k" inputmode="decimal" value="${num(l?.kg)}" placeholder="—" ${done.has(e.exercise) ? "disabled" : ""} />
+        </div>`;
+      })
+      .join("");
+    box.querySelectorAll<HTMLElement>(".tr-row[data-ex]").forEach((row) => {
+      const cb = row.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+      cb.addEventListener("change", () => row.classList.toggle("off", !cb.checked));
+    });
+  };
+  fill();
+  m.el.querySelectorAll<HTMLButtonElement>("[data-tr]").forEach((b) =>
+    b.addEventListener("click", () => {
+      current = Number(b.dataset.tr);
+      fill();
+    }),
+  );
+  dateIn.addEventListener("change", fill);
+  m.el.querySelector("#tr-free")!.addEventListener("click", () => {
+    m.close();
+    openWorkout(dateIn.value);
+  });
+  const save = async (withSets: boolean, btn: HTMLButtonElement) => {
+    const err = m.el.querySelector<HTMLElement>(".form-err")!;
+    const exercises = withSets
+      ? [...box.querySelectorAll<HTMLElement>(".tr-row[data-ex]")]
+          .filter((row) => row.querySelector<HTMLInputElement>("input[type=checkbox]")!.checked)
+          .map((row) => ({
+            exercise: Number(row.dataset.ex),
+            sets: Number(row.querySelector<HTMLInputElement>(".tr-s")!.value) || 1,
+            reps: Number(row.querySelector<HTMLInputElement>(".tr-r")!.value) || null,
+            kg: parseNum(row.querySelector<HTMLInputElement>(".tr-k")!.value),
+          }))
+          .filter((e) => e.reps != null || e.kg != null)
+      : [];
+    btn.disabled = true;
+    try {
+      await api("/api/saude/academia", { method: "PUT", body: { date: dateIn.value, day: current, notes: m.el.querySelector<HTMLInputElement>("#tr-notes")!.value.trim(), exercises } });
+      const name = r.days.find((x) => x.id === current)!.name;
+      toast(exercises.length ? `${name} salvo: ${exercises.length} exercícios` : `${name} marcado em ${dayBR(dateIn.value)}`);
+      m.close();
+      rerender();
+    } catch (e) {
+      btn.disabled = false;
+      err.hidden = false;
+      err.textContent = (e as Error).message;
+    }
+  };
+  m.el.querySelector<HTMLButtonElement>("#tr-mark")!.addEventListener("click", (ev) => save(false, ev.currentTarget as HTMLButtonElement));
+  m.el.querySelector<HTMLButtonElement>("#tr-save")!.addEventListener("click", (ev) => save(true, ev.currentTarget as HTMLButtonElement));
 }
 
 function openWorkout(date: string) {
