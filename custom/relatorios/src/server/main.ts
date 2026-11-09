@@ -15,7 +15,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpServer } from "./mcp";
 import { sameToken, seal, sealForSync, unseal, userDir, userIdOf } from "./users";
 import { FIREFLY_PUBLIC_URL, FireflyError, type ImportRow, accounts as finAccounts, categoryNames, existing, monthlyTotals, ff, importRows, overview, parseStatement, readConfig, sealToken, tokenOf, writeConfig } from "./financas";
-import { WGER_PUBLIC_URL, WgerError, type WorkoutInput, currentRoutine, deleteWeight, gymDays, readSaude, removeGymDay, saveWeight, saveWorkout, sealSaude, searchExercises, stravaActivities, stravaAuthUrl, stravaCallback, stravaForget, syncGymGoals, todaySP, weights, wg, wgerToken, writeSaude } from "./saude";
+import { WGER_PUBLIC_URL, WgerError, type WorkoutInput, currentRoutine, deleteWeight, importStrava, parseStravaExport, stravaHistory, gymDays, readSaude, removeGymDay, saveWeight, saveWorkout, sealSaude, searchExercises, stravaActivities, stravaAuthUrl, stravaCallback, stravaForget, syncGymGoals, todaySP, weights, wg, wgerToken, writeSaude } from "./saude";
 import { type NewTx, cardBooks, createTx, deleteTx, forecast, monthTransactions, suggestPlanned, updateTx, validPlanned } from "./fin-plan";
 
 const BASE_URL = (process.env.GHOSTFOLIO_URL ?? "http://ghostfolio:3333").replace(/\/$/, "");
@@ -363,6 +363,21 @@ const server = http.createServer(async (req, res) => {
         }
         if (url.pathname === "/api/saude/exercicios") return send(res, 200, await searchExercises(wtk, url.searchParams.get("q") ?? ""));
         if (url.pathname === "/api/saude/treinos") return send(res, 200, await currentRoutine(wtk));
+        // Histórico da Strava pela exportação de dados dela (activities.csv), não pela API.
+        if (url.pathname === "/api/saude/historico") return send(res, 200, await stravaHistory(wtk));
+        if (url.pathname === "/api/saude/strava/importar" && req.method === "POST") {
+          const b = (await readBody(req, 30_000_000)) as { csv?: string };
+          if (typeof b?.csv !== "string" || !b.csv.trim()) return send(res, 400, { error: "Arquivo vazio." });
+          let parsed;
+          try {
+            parsed = parseStravaExport(b.csv);
+          } catch (e) {
+            return send(res, 400, { error: (e as Error).message });
+          }
+          const r = await importStrava(wtk, parsed.rows, { dryRun: url.searchParams.get("simular") === "1" });
+          if (r.created && r.gymDays) syncGymGoals(s.dir, await gymDays(wtk));
+          return send(res, 200, { ...r, skipped: parsed.skipped });
+        }
       } catch (e) {
         return send(res, e instanceof WgerError && e.status < 500 ? 400 : 502, { error: (e as Error).message });
       }

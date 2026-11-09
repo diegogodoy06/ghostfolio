@@ -1,6 +1,7 @@
 // Aba Saúde: peso e academia (wger) e atividades da Strava (só leitura, ao vivo).
 import { Chart } from "chart.js";
 import { api, shift, thisMonth, todayIso } from "./fin-common";
+import { readFromZip } from "./zip";
 import { MONTHS, esc, fadeFill, hatch, highlightPlugin, isMobile, openModal, parseNum, toast } from "./ui";
 
 interface Weight {
@@ -37,13 +38,33 @@ interface Activity {
   elevation: number;
   url: string;
 }
+interface HistoryActivity {
+  stravaId: string;
+  date: string;
+  type: string;
+  name: string;
+  km: number;
+  minutes: number;
+  elevation: number;
+}
+interface ImportResult {
+  total: number;
+  existing: number;
+  created: number;
+  remaining: number;
+  gymDays: number;
+  skipped: number;
+  byType: Record<string, { n: number; km: number }>;
+  from: string | null;
+  to: string | null;
+}
 interface Status {
   connected: boolean;
   publicUrl: string;
   strava: { configured: boolean; connected: boolean; athlete: string | null };
 }
 
-const SPORTS: Record<string, string> = { Run: "Corrida", TrailRun: "Trilha", Ride: "Pedal", VirtualRide: "Pedal indoor", MountainBikeRide: "Mountain bike", GravelRide: "Gravel", Walk: "Caminhada", Hike: "Trekking", Swim: "Natação", WeightTraining: "Musculação", Workout: "Treino", Yoga: "Yoga" };
+const SPORTS: Record<string, string> = { Run: "Corrida", TrailRun: "Trilha", Ride: "Pedal", VirtualRide: "Pedal indoor", MountainBikeRide: "Mountain bike", GravelRide: "Gravel", Walk: "Caminhada", Hike: "Trekking", Swim: "Natação", WeightTraining: "Musculação", Crossfit: "Crossfit", Workout: "Treino", Yoga: "Yoga", Elliptical: "Elíptico", Rowing: "Remo", VirtualRun: "Corrida indoor", EBikeRide: "Pedal elétrico" };
 const sportName = (s: string) => SPORTS[s] ?? s;
 const kg = (n: number) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg`;
 const dayBR = (d: string) => d.split("-").reverse().slice(0, 2).join("/");
@@ -137,7 +158,8 @@ export async function renderSaude(main: HTMLElement, charts: Chart[]) {
       <div class="card" id="sa-cal"></div>
       <div class="card" id="sa-peso"></div>
     </section>
-    <section class="card" id="sa-strava"></section>`;
+    <section class="card" id="sa-strava"></section>
+    <section class="card" id="sa-hist"></section>`;
 
   main.querySelector("#sa-workout")!.addEventListener("click", () => (routine?.days.length ? openTreino(nextDay(routine, gym)!.id, todayIso()) : openWorkout(todayIso())));
   const tr = main.querySelector<HTMLElement>("#sa-treinos");
@@ -147,6 +169,7 @@ export async function renderSaude(main: HTMLElement, charts: Chart[]) {
   drawCalendar(main.querySelector<HTMLElement>("#sa-cal")!, gym);
   drawWeight(main.querySelector<HTMLElement>("#sa-peso")!, weights, charts);
   void drawStrava(main, st, charts);
+  void drawHistory(main.querySelector<HTMLElement>("#sa-hist")!, charts);
 }
 
 // ---------- academia ----------
@@ -510,6 +533,137 @@ async function drawStrava(main: HTMLElement, st: Status, charts: Chart[]) {
       },
     }),
   );
+}
+
+// ---------- histórico (exportação de dados da Strava, guardada no wger) ----------
+
+const EXPORT_URL = "https://www.strava.com/athlete/delete_your_account";
+const km1 = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+
+async function drawHistory(el: HTMLElement, charts: Chart[]) {
+  let list: HistoryActivity[];
+  try {
+    list = await api<HistoryActivity[]>("/api/saude/historico");
+  } catch (e) {
+    el.innerHTML = `<h2>Histórico</h2><p class="error small">${esc((e as Error).message)}</p>`;
+    return;
+  }
+  if (!el.isConnected) return;
+  if (!list.length) {
+    el.innerHTML = `<div class="row-between"><h2 style="margin:0">Histórico</h2><button class="ghost" id="hi-imp">Importar da Strava</button></div>
+      <p class="muted">Para guardar todas as suas atividades aqui (e no wger) para sempre, use a <b>exportação de dados da própria Strava</b>. A API não deixa guardar nada por mais de 7 dias; a exportação é sua, sem essa limitação.</p>
+      <ol class="muted small">
+        <li>Na Strava, abra <a href="${EXPORT_URL}" target="_blank" rel="noopener">Minha conta → Baixar ou excluir sua conta</a> e clique em <b>Solicitar seu arquivo</b> (não exclui nada).</li>
+        <li>A Strava manda um e-mail com o link do .zip, em alguns minutos ou horas.</li>
+        <li>Clique em <b>Importar da Strava</b> e escolha o .zip. Só o activities.csv é lido, e repetir não duplica.</li>
+      </ol>`;
+    el.querySelector("#hi-imp")!.addEventListener("click", openImport);
+    return;
+  }
+  const today = todayIso();
+  const year = list.filter((a) => a.date.startsWith(today.slice(0, 4)));
+  const types = new Map<string, { n: number; km: number }>();
+  for (const a of year) {
+    const t = types.get(a.type) ?? { n: 0, km: 0 };
+    t.n++;
+    t.km += a.km;
+    types.set(a.type, t);
+  }
+  const nM = isMobile() ? 6 : 12;
+  const months = Array.from({ length: nM }, (_, i) => shift(thisMonth(), i - nM + 1));
+  const perMonth = months.map((m) => Math.round(list.filter((a) => a.date.startsWith(m)).reduce((t, a) => t + a.km, 0) * 10) / 10);
+  const lastI = perMonth.length - 1;
+  const last = list.at(-1)!;
+  el.innerHTML = `<div class="row-between"><h2 style="margin:0">Histórico</h2><button class="ghost" id="hi-imp">Atualizar</button></div>
+    <p class="muted small" style="margin:6px 0 12px">${list.length} atividades guardadas, de ${dayBR(list[0]!.date)}/${list[0]!.date.slice(0, 4)} a ${dayBR(last.date)}/${last.date.slice(0, 4)}. Vêm da exportação de dados da Strava; para trazer as novas, importe uma exportação mais recente.</p>
+    <div class="chips">${[...types]
+      .sort((a, b) => b[1].n - a[1].n)
+      .map(([t, v]) => `<span class="chip-static">${esc(sportName(t))} <b>${v.n}</b>${v.km ? ` · ${km1(v.km)} km` : ""}</span>`)
+      .join("") || `<span class="muted small">Nada em ${today.slice(0, 4)}.</span>`}</div>
+    <div class="row-between"><span class="muted small">km por mês</span><span class="muted small">${today.slice(0, 4)}: ${km1(year.reduce((t, a) => t + a.km, 0))} km</span></div>
+    <div class="chart-box"><canvas></canvas></div>
+    <details class="sa-more"><summary>Últimas importadas</summary><div class="fin-tx">${[...list]
+      .reverse()
+      .slice(0, 15)
+      .map((a) => `<div class="sa-act"><span class="t"><b>${esc(a.name || sportName(a.type))}</b><span class="muted small">${dayBR(a.date)}/${a.date.slice(2, 4)} · ${esc(sportName(a.type))}${a.km ? ` · ${km1(a.km)} km` : ""}${a.minutes ? ` · ${duration(a.minutes)}` : ""}</span></span></div>`)
+      .join("")}</div></details>`;
+  el.querySelector("#hi-imp")!.addEventListener("click", openImport);
+  charts.push(
+    new Chart(el.querySelector("canvas")!, {
+      type: "bar",
+      data: { labels: months.map((m) => MONTHS[Number(m.slice(5)) - 1]!.slice(0, 3)), datasets: [{ data: perMonth, backgroundColor: perMonth.map((_, i) => (i === lastI ? "#43d66b" : hatch("rgba(67,214,107,0.7)", "rgba(67,214,107,0.06)"))), borderRadius: 999, borderSkipped: false, barPercentage: 0.6 }] },
+      plugins: [highlightPlugin],
+      options: {
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c: { raw: unknown }) => ` ${km1(Number(c.raw))} km` } }, highlight: { index: lastI, text: `${km1(perMonth[lastI]!)} km` } } as any,
+        scales: { x: { grid: { display: false } }, y: { ticks: { callback: (v) => `${v} km` } } },
+      },
+    }),
+  );
+}
+
+function openImport() {
+  const m = openModal(
+    "Importar da Strava",
+    `<p class="muted" style="margin-top:0">Escolha o <b>.zip</b> da exportação de dados da Strava (ou o <b>activities.csv</b> de dentro dele). Ainda não pediu? <a href="${EXPORT_URL}" target="_blank" rel="noopener">Solicite aqui</a>.</p>
+     <label class="field">Arquivo<input id="im-file" type="file" accept=".zip,.csv,application/zip,text/csv" /></label>
+     <div id="im-out"></div>
+     <p class="error small form-err" hidden></p>
+     <div class="modal-actions"><button class="primary" id="im-go" hidden>Importar</button></div>`,
+  );
+  const out = m.el.querySelector<HTMLElement>("#im-out")!;
+  const err = m.el.querySelector<HTMLElement>(".form-err")!;
+  const go = m.el.querySelector<HTMLButtonElement>("#im-go")!;
+  let csv = "";
+  const fail = (msg: string) => {
+    err.hidden = false;
+    err.textContent = msg;
+  };
+  m.el.querySelector<HTMLInputElement>("#im-file")!.addEventListener("change", async (ev) => {
+    const f = (ev.target as HTMLInputElement).files?.[0];
+    err.hidden = true;
+    go.hidden = true;
+    if (!f) return;
+    out.innerHTML = `<p class="muted small">Lendo o arquivo…</p>`;
+    try {
+      csv = /\.zip$/i.test(f.name) || f.type.includes("zip") ? ((await readFromZip(f, (n) => /(^|\/)activities\.csv$/i.test(n))) ?? "") : await f.text();
+      if (!csv) throw new Error("Não achei o activities.csv dentro do .zip.");
+      const r = await api<ImportResult>("/api/saude/strava/importar?simular=1", { method: "POST", body: { csv } });
+      const fresh = r.remaining;
+      out.innerHTML = `<div class="sa-ex"><b>${r.total} atividades</b><span class="muted small">${r.from ? `de ${r.from.split("-").reverse().join("/")} a ${r.to!.split("-").reverse().join("/")}` : ""}${r.skipped ? ` · ${r.skipped} linhas ignoradas` : ""}</span></div>
+        <div class="chips" style="margin-top:10px">${Object.entries(r.byType)
+          .sort((a, b) => b[1].n - a[1].n)
+          .map(([t, v]) => `<span class="chip-static">${esc(sportName(t))} <b>${v.n}</b>${v.km ? ` · ${km1(v.km)} km` : ""}</span>`)
+          .join("")}</div>
+        <p class="muted small">${fresh ? `<b>${fresh}</b> novas para guardar${r.existing ? `, ${r.existing} já estavam` : ""}.${r.gymDays ? ` ${r.gymDays} são musculação e viram dias de academia (contam nas metas).` : ""}` : "Tudo já estava importado."}</p>`;
+      if (fresh) {
+        go.hidden = false;
+        go.textContent = `Importar ${fresh}`;
+      }
+    } catch (e) {
+      out.innerHTML = "";
+      fail((e as Error).message);
+    }
+  });
+  go.addEventListener("click", async () => {
+    go.disabled = true;
+    let done = 0;
+    try {
+      for (;;) {
+        const r = await api<ImportResult>("/api/saude/strava/importar", { method: "POST", body: { csv } });
+        done += r.created;
+        go.textContent = `Importando… ${done}`;
+        if (!r.remaining || !r.created) break;
+      }
+      toast(`${done} atividades importadas`);
+      m.close();
+      rerender();
+    } catch (e) {
+      go.disabled = false;
+      go.textContent = "Continuar";
+      fail(`${(e as Error).message} (${done} já foram; é só continuar, não duplica)`);
+    }
+  });
 }
 
 function renderStravaConnect(el: HTMLElement, st: Status) {

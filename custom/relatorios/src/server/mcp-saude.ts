@@ -1,11 +1,12 @@
 /**
  * Ferramentas de saúde do MCP: peso, dias de academia e treinos, guardados no wger.
- * Dados da Strava NÃO passam por aqui (API Policy §5.3 e §5.16): no Claude, as atividades vêm do
- * conector oficial da Strava.
+ * Dados da API da Strava NÃO passam por aqui (API Policy §5.3 e §5.16): no Claude, as atividades
+ * recentes vêm do conector oficial da Strava. O que está aqui é o histórico que o próprio usuário
+ * exportou da Strava (Bulk Data Export, §6.6) e importou no wger.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { currentRoutine, findDay, gymDays, nextDay, readSaude, removeGymDay, saveWeight, saveWorkout, searchExercises, syncGymGoals, todaySP, weights, wgerToken } from "./saude";
+import { currentRoutine, findDay, gymDays, nextDay, readSaude, stravaHistory, removeGymDay, saveWeight, saveWorkout, searchExercises, syncGymGoals, todaySP, weights, wgerToken } from "./saude";
 import { ownerDir } from "./users";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -48,6 +49,22 @@ export function registerHealthTools(server: McpServer) {
     lines.push(`- Últimos 7 dias: ${g.filter((d) => d.date > back(7)).length}`, `- Últimos 30 dias: ${g.filter((d) => d.date > back(30)).length}`, `- Neste mês: ${g.filter((d) => d.date.startsWith(today.slice(0, 7))).length}`, `- Neste ano: ${g.filter((d) => d.date.startsWith(today.slice(0, 4))).length}`);
     return lines.join("\n");
   });
+
+  tool(
+    "saude_atividades",
+    "Histórico de atividades",
+    "Corridas, pedais, caminhadas e musculação do histórico que o usuário exportou da Strava e importou no wger (não é a API da Strava; para o que é recente e ainda não foi importado, use o conector oficial da Strava). Lista e totais por tipo e por mês.",
+    { desde: ymd.optional(), ate: ymd.optional(), tipo: z.string().optional().describe("Run, Ride, Walk, Hike, Swim, WeightTraining…") },
+    async ({ desde, ate, tipo }) => {
+      const { token } = await ctx();
+      const all = await stravaHistory(token);
+      const h = all.filter((a) => (!desde || a.date >= desde) && (!ate || a.date <= ate) && (!tipo || a.type.toLowerCase() === tipo.toLowerCase()));
+      if (!all.length) return "Nenhuma atividade importada. O usuário importa a exportação de dados da Strava na aba Saúde.";
+      const sum = (xs: typeof h) => `${xs.length} atividades · ${xs.reduce((t, a) => t + a.km, 0).toFixed(1)} km · ${Math.round(xs.reduce((t, a) => t + a.minutes, 0) / 60)} h`;
+      const group = (key: (a: (typeof h)[number]) => string) => [...new Set(h.map(key))].map((k) => `- ${k}: ${sum(h.filter((a) => key(a) === k))}`);
+      return [`Importado até ${all.at(-1)!.date}.`, `# Total: ${sum(h)}`, "", "# Por tipo", ...group((a) => a.type), "", "# Por mês", ...group((a) => a.date.slice(0, 7)), "", "# Atividades", ...h.slice(-200).map((a) => `${a.date} | ${a.type} | ${a.name} | ${a.km} km | ${a.minutes} min | ${a.elevation} m D+`)].join("\n");
+    },
+  );
 
   tool("saude_peso", "Histórico de peso", "Todos os pesos lançados, com id.", { desde: ymd.optional() }, async ({ desde }) => {
     const { token } = await ctx();
