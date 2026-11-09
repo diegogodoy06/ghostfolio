@@ -345,6 +345,8 @@ function stravaType(raw: string) {
   const hit = known.find((k) => k.toLowerCase() === t.toLowerCase());
   if (hit) return hit;
   const n = norm(raw);
+  if (/eletric|e-?bike/.test(n)) return "EBikeRide";
+  if (/virtual/.test(n) && /ped|ride|bike/.test(n)) return "VirtualRide";
   if (/trilh|trail/.test(n) && /corr|run/.test(n)) return "TrailRun";
   if (/corr|run/.test(n)) return "Run";
   if (/ped|cicl|bike|bicic|ride/.test(n)) return "Ride";
@@ -362,17 +364,22 @@ function stravaType(raw: string) {
 export function parseStravaExport(csv: string): { rows: StravaRow[]; skipped: number } {
   const all = parseCsv(csv.replace(/^\uFEFF/, ""));
   const head = (all.shift() ?? []).map((h) => h.trim());
-  const col = (name: string, nth = 0) => head.reduce<number[]>((a, h, i) => (h.toLowerCase() === name.toLowerCase() ? [...a, i] : a), [])[nth] ?? -1;
-  const iId = col("Activity ID");
-  const iDate = col("Activity Date");
-  if (iId < 0 || iDate < 0) throw new Error("Este não parece o activities.csv da exportação da Strava (faltam as colunas Activity ID e Activity Date).");
-  const iName = col("Activity Name");
-  const iType = col("Activity Type");
-  const iKm = col("Distance");
-  const iM = col("Distance", 1); // a segunda coluna Distance vem em metros
-  const iMov = col("Moving Time");
-  const iEl = col("Elapsed Time");
-  const iUp = col("Elevation Gain");
+  // A exportação vem no idioma da conta: aceita os nomes em inglês e em português.
+  const col = (names: string | string[], nth = 0) => {
+    const want = (Array.isArray(names) ? names : [names]).map(norm);
+    return head.reduce<number[]>((a, h, i) => (want.includes(norm(h)) ? [...a, i] : a), [])[nth] ?? -1;
+  };
+  const iId = col(["Activity ID", "ID da atividade"]);
+  const iDate = col(["Activity Date", "Data da atividade"]);
+  if (iId < 0 || iDate < 0) throw new Error("Este não parece o activities.csv da exportação da Strava (faltam as colunas de ID e data da atividade).");
+  const iName = col(["Activity Name", "Nome da atividade"]);
+  const iType = col(["Activity Type", "Tipo de atividade"]);
+  const DIST = ["Distance", "Distância"];
+  const iKm = col(DIST);
+  const iM = col(DIST, 1); // a segunda coluna de distância vem em metros
+  const iMov = col(["Moving Time", "Tempo de movimentação"]);
+  const iEl = col(["Elapsed Time", "Tempo decorrido"]);
+  const iUp = col(["Elevation Gain", "Ganho de elevação"]);
   const rows: StravaRow[] = [];
   let skipped = 0;
   for (const r of all) {
