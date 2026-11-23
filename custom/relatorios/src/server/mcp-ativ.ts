@@ -61,7 +61,12 @@ const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 const num = (n: number, d = 8) => n.toLocaleString("pt-BR", { maximumFractionDigits: d });
-const isB3 = (a: GfAccount) => !!a.comment?.includes(B3_MARK);
+/**
+ * Conta da B3: criada pelo ghostfolio-sync (comentário) ou com ativos da B3 (Yahoo ".SA"). O sync
+ * reconhece as contas pelo nome da instituição, então contas antigas como "XP Investimentos" não
+ * têm a marca no comentário; nelas, um registro manual seria refeito ou desfeito pelos extratos.
+ */
+const isB3 = (a: GfAccount, acts: GfActivity[]) => !!a.comment?.includes(B3_MARK) || acts.some((x) => x.accountId === a.id && /\.SA$/i.test(x.assetProfile.symbol));
 
 const TYPES = { compra: "BUY", venda: "SELL", provento: "DIVIDEND", juros: "INTEREST", taxa: "FEE" } as const;
 const TYPE_PT: Record<string, string> = { BUY: "compra", SELL: "venda", DIVIDEND: "provento", INTEREST: "juros", FEE: "taxa", LIABILITY: "passivo" };
@@ -108,8 +113,8 @@ export function registerActivityTools(server: McpServer, onChange: () => void) {
     "Contas do Ghostfolio com id e moeda, indicando quais são da B3 (preenchidas pelos extratos, só leitura aqui) e quais aceitam registro manual (exchanges, corretoras no exterior, reserva).",
     {},
     async () => {
-      const accs = await getAccounts();
-      return accs.map((a) => `- ${a.name} · ${a.currency} · id ${a.id}${isB3(a) ? " · B3 (extratos, só leitura)" : " · manual"}`).join("\n") || "Nenhuma conta.";
+      const [accs, acts] = await Promise.all([getAccounts(), getActivities()]);
+      return accs.map((a) => `- ${a.name} · ${a.currency} · id ${a.id}${isB3(a, acts) ? " · B3 (extratos, só leitura)" : " · manual"}`).join("\n") || "Nenhuma conta.";
     },
   );
 
@@ -189,7 +194,7 @@ export function registerActivityTools(server: McpServer, onChange: () => void) {
     async (p) => {
       const [accs, acts] = await Promise.all([getAccounts(), getActivities()]);
       const acc = resolveAccount(accs, p.conta);
-      if (isB3(acc)) throw new Error(`A conta ${acc.name} é da B3 e é preenchida pelos extratos. Solte o extrato de movimentação em extratos/ (ou envie pelo botão de nuvem dos relatórios).`);
+      if (isB3(acc, acts)) throw new Error(`A conta ${acc.name} é da B3 e é preenchida pelos extratos. Solte o extrato de movimentação em extratos/ (ou envie pelo botão de nuvem dos relatórios).`);
       const type = TYPES[p.tipo as keyof typeof TYPES];
       const currency = (p.moeda ?? acc.currency).toUpperCase();
       const date = `${p.data}T00:00:00.000Z`;
@@ -257,7 +262,7 @@ export function registerActivityTools(server: McpServer, onChange: () => void) {
       const a = acts.find((x) => x.id === id);
       if (!a) return `Atividade ${id} não encontrada.`;
       const acc = accs.find((x) => x.id === a.accountId);
-      if (acc && isB3(acc)) throw new Error(`A atividade é da conta ${acc.name}, que vem dos extratos da B3. Corrija pelo extrato (ou extratos/ajustes.json).`);
+      if (acc && isB3(acc, acts)) throw new Error(`A atividade é da conta ${acc.name}, que vem dos extratos da B3. Corrija pelo extrato (ou extratos/ajustes.json).`);
       if (a.comment?.startsWith("Auto (Yahoo)")) throw new Error("Proventos automáticos são mantidos pelo ghostfolio-sync.");
       await api("DELETE", `/v1/activities/${id}`);
       onChange();
