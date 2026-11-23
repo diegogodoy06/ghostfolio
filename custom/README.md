@@ -24,7 +24,9 @@ Extensão do Ghostfolio com o mesmo visual (barra superior com os links dele e m
 
 ### Claude Desktop / Claude Code (MCP "carteira")
 
-O container dos relatórios também tem um servidor MCP (só leitura), que funciona com a assinatura do Claude e dispensa a API. Ferramentas: `resumo_carteira`, `posicoes`, `proventos`, `desempenho`, `metas` e `simular_aporte` (não salva nada). Ele também traz prompts prontos de análise.
+O container dos relatórios também tem um servidor MCP, que funciona com a assinatura do Claude e dispensa a API. Ferramentas: `resumo_carteira`, `posicoes`, `proventos`, `desempenho`, `metas` e `simular_aporte` (não salva nada). Ele também traz prompts prontos de análise.
+
+Para o que não passa pela B3 (exchange de cripto, corretora no exterior, fundos, reserva de emergência), o MCP registra no Ghostfolio: `ghostfolio_contas`, `ghostfolio_buscar_ativo`, `ghostfolio_atividades`, `ghostfolio_criar_conta`, `ghostfolio_registrar` e `ghostfolio_excluir`. As contas da B3 (gerenciadas pelo `ghostfolio-sync`) ficam bloqueadas para escrita: para elas, continue usando os extratos. Ativos sem cotação (ex.: fundo DI da reserva) entram como manuais com quantidade = valor em R$ e preço 1; `reserva=true` aplica o marcador Fundo de Emergência.
 
 De qualquer lugar (HTTPS): os relatórios atendem MCP em `https://<domínio dos relatórios>/mcp`, com um token próprio (só leitura; não serve para entrar no Ghostfolio). Pegue o token com `docker exec ghostfolio-relatorios node server.js --mcp-token` e use a ponte local `custom/relatorios/mcp-bridge.mjs` no `claude_desktop_config.json`:
 
